@@ -98,7 +98,6 @@ export default function PropertyMap({ locality, result, city, onLocationResolved
       const t = setInterval(() => { if (tryInit()) clearInterval(t); }, 300);
       return () => clearInterval(t);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update marker when coords change
@@ -136,7 +135,6 @@ export default function PropertyMap({ locality, result, city, onLocationResolved
 
     map.setView(coords, 14);
     if (result) markerRef.current.openPopup();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords[0], coords[1], result]);
 
   // Geocode address

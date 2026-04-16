@@ -60,7 +60,6 @@ export default function PropertyForm({ form, onChange, onSubmit, loading }) {
       setResolvedInfo({ locality, distKm: distanceKm.toFixed(1), display });
       onChange({ ...form, locality, geo_lat: lat, geo_lon: lon });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [form, onChange]
   );
 
