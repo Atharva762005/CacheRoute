@@ -1,4 +1,4 @@
-// PropIQ API Client v2 — 3 cities, all endpoints
+// PropIQ API Client v2 — 3 cities, all endpoints, multi-image support
 import axios from 'axios';
 
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -21,16 +21,34 @@ export const assessFull = async (formData) => {
   return data;
 };
 
-export const assessWithImage = async (formData, imageFile) => {
+/**
+ * Multi-image assessment.
+ * images: Array of { file: File, tag: 'exterior'|'interior' }
+ */
+export const assessWithImages = async (formData, images = []) => {
   const fd = new FormData();
   Object.entries(formData).forEach(([k, v]) => fd.append(k, v));
-  fd.append('image', imageFile);
+
+  if (images.length === 1) {
+    // Keep backward-compat single field
+    fd.append('image', images[0].file);
+  } else {
+    images.forEach((img, i) => {
+      fd.append('images', img.file);
+      fd.append(`image_tag_${i}`, img.tag || 'exterior');
+    });
+  }
+
   const { data } = await axios.post(`${BASE_URL}/api/v1/assess/image`, fd, {
     headers: { 'Content-Type': 'multipart/form-data', 'X-API-Key': DEMO_KEY },
-    timeout: 30000,
+    timeout: 60000,
   });
   return data;
 };
+
+// Legacy single-image compat
+export const assessWithImage = async (formData, imageFile) =>
+  assessWithImages(formData, [{ file: imageFile, tag: 'exterior' }]);
 
 export const downloadPDF = async (formData) => {
   const { data } = await api.post('/api/v1/assess/pdf', formData, { responseType: 'blob' });

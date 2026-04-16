@@ -4,8 +4,17 @@ All environment variables and constants in one place.
 """
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).parent.parent.parent  # backend/
+
+# Load .env from backend/ first, then fall back to project root (../)
+_env_backend = BASE_DIR / ".env"
+_env_root    = BASE_DIR.parent / ".env"
+if _env_backend.exists():
+    load_dotenv(_env_backend, override=False)
+if _env_root.exists():
+    load_dotenv(_env_root, override=False)
 
 class Settings:
     # App

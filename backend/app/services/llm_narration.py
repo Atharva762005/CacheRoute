@@ -1,19 +1,23 @@
 """
 PropIQ LLM Narration Service
-Uses Claude API to convert JSON assessment into credit memo language.
+Uses Groq API (llama-3.3-70b) to convert JSON assessment into credit memo language.
 This is the feature that makes PropIQ demo-ready — a loan officer
 can read this output directly into a file note.
 """
 
 import os
-import httpx
 import json
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-sonnet-4-6"
+# Ensure .env is loaded from project root
+from dotenv import load_dotenv
+_project_root = Path(__file__).parent.parent.parent.parent
+load_dotenv(_project_root / ".env", override=False)
+load_dotenv(Path(__file__).parent.parent.parent / ".env", override=False)
+
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 def fmt_inr(value: int) -> str:
@@ -24,10 +28,10 @@ def fmt_inr(value: int) -> str:
 
 async def generate_credit_memo(assessment: dict) -> dict:
     """
-    Generate a plain-English credit memo from assessment JSON.
+    Generate a plain-English credit memo from assessment JSON using Groq.
     Returns: { summary, recommendation, risk_narrative, key_points }
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = os.getenv("GROQ_API_KEY", "")
     if not api_key:
         return _fallback_memo(assessment)
 
@@ -66,28 +70,20 @@ Write EXACTLY this JSON structure (no markdown, no preamble):
 }}"""
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(
-                ANTHROPIC_API_URL,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": MODEL,
-                    "max_tokens": 600,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            text = data["content"][0]["text"].strip()
-            # Strip any accidental markdown fences
-            if text.startswith("```"):
-                text = text.split("```")[1]
-                if text.startswith("json"): text = text[4:]
-            return json.loads(text)
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+        completion = await client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=600,
+            temperature=0.3,
+        )
+        text = completion.choices[0].message.content.strip()
+        # Strip any accidental markdown fences
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"): text = text[4:]
+        return json.loads(text)
     except Exception as e:
         print(f"LLM narration failed: {e} — using fallback")
         return _fallback_memo(assessment)
@@ -104,7 +100,7 @@ def _fallback_memo(assessment: dict) -> dict:
     liq_label = "highly liquid" if rpi >= 75 else "moderately liquid" if rpi >= 50 else "relatively illiquid"
     ltv = "up to 65%" if rpi >= 75 and not flags else "up to 55%" if rpi >= 50 else "up to 45%"
     flag_note = (f"The assessment flagged {len(flags)} concern(s): "
-                 + ", ".join(f['flag'].replace('_',' ') for f in flags[:2]) + ".")  \
+                 + ", ".join(f['flag'].replace('_',' ') for f in flags[:2]) + ".") \
                 if flags else "No automated risk flags were detected."
 
     return {
@@ -133,4 +129,3 @@ def _fallback_memo(assessment: dict) -> dict:
             f"Risk flags: {len(flags)} detected — {'review required' if flags else 'clear'}",
         ],
     }
-

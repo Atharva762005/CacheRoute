@@ -2,22 +2,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { parsePropertyInput, generateBotResponse } from '../utils/chatParser';
 
-const QUICK_PROMPTS = [
-  '2BHK in Baner, 850 sqft, 8 years old',
-  '3BHK apartment in Kothrud, 1200 sqft, 5 years',
-  'Villa in Koregaon Park, 3000 sqft, 12 years',
-  'Shop in Hadapsar, 400 sqft, 6 years old',
-];
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
-export default function ChatWindow({ form, onFormUpdate, onAssess, onPDF, loading }) {
+
+
+export default function ChatWindow({ form, onFormUpdate, onAssess, onPDF, loading, result }) {
   const [messages, setMessages] = useState([
     {
       id: 1, role: 'bot',
-      text: "Hi! I'm **PropIQ** 👋\n\nTell me about the property you want to assess. Try:\n\n*\"2BHK in Baner, 850 sqft, 8 years old, 5th floor\"*\n\nOr use the quick prompts below.",
+      text: "Hi! I'm **PropIQ** 👋\n\nTell me about a property to assess, or ask me anything about collateral underwriting.\n\nOnce you run an assessment, I can answer specific questions about the valuation, risk flags, LTV, and more.",
     },
   ]);
   const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef(null);
+  // Keep history for Groq context (role: 'user'|'assistant')
+  const historyRef = useRef([]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -27,57 +27,66 @@ export default function ChatWindow({ form, onFormUpdate, onAssess, onPDF, loadin
     setMessages(prev => [...prev, { id: Date.now(), role, text, ...extra }]);
   };
 
-  const handleSend = (text) => {
+  const handleSend = async (text) => {
     const msg = text || input.trim();
     if (!msg) return;
     setInput('');
     addMessage('user', msg);
 
-    // Parse property data from natural language
+    // ── 1. Parse property fields from natural language (local, instant) ──
     const { extracted, missing } = parsePropertyInput(msg);
     const updatedForm = { ...form, ...extracted };
     if (Object.keys(extracted).length > 0) onFormUpdate(updatedForm);
 
-    // Generate bot response
-    setTimeout(() => {
-      const { text: botText, action } = generateBotResponse(msg, updatedForm, missing);
+    // ── 2. Check for local action triggers (assess / pdf) ─────────────────
+    const lowerMsg = msg.toLowerCase();
+    const isAssessAction = lowerMsg.includes('assess') || lowerMsg.includes('value') ||
+      lowerMsg.includes('valuat') || lowerMsg.includes('how much') ||
+      lowerMsg.includes('worth') || lowerMsg.includes('price');
+    const isPdfAction = lowerMsg.includes('pdf') || lowerMsg.includes('report') || lowerMsg.includes('download');
 
-      if (action === 'ASSESS') {
-        addMessage('bot', botText);
-        setTimeout(() => onAssess(), 300);
-        return;
-      }
-      if (action === 'PDF') {
-        addMessage('bot', botText);
-        setTimeout(() => onPDF(), 300);
-        return;
-      }
+    if (isAssessAction) {
+      addMessage('bot', 'Running the assessment now...');
+      setTimeout(() => onAssess(), 300);
+      historyRef.current.push({ role: 'user', content: msg },
+        { role: 'assistant', content: 'Running the assessment now...' });
+      return;
+    }
+    if (isPdfAction) {
+      addMessage('bot', 'Generating your RBI-ready PDF report...');
+      setTimeout(() => onPDF(), 300);
+      historyRef.current.push({ role: 'user', content: msg },
+        { role: 'assistant', content: 'Generating your RBI-ready PDF report...' });
+      return;
+    }
 
-      // Show what was extracted
-      if (Object.keys(extracted).length > 0) {
-        const extracted_summary = Object.entries(extracted)
-          .filter(([k]) => ['locality','prop_type','size_sqft','age_years','floor_num'].includes(k))
-          .map(([k, v]) => {
-            const labels = { locality: '📍 Locality', prop_type: '🏠 Type',
-              size_sqft: '📐 Size', age_years: '📅 Age', floor_num: '🔢 Floor' };
-            const display = k === 'prop_type' ? v.replace(/_/g,' ').toUpperCase()
-              : k === 'size_sqft' ? `${v} sqft`
-              : k === 'age_years' ? `${v} years`
-              : k === 'floor_num' ? `Floor ${v}`
-              : v;
-            return `${labels[k] || k}: **${display}**`;
-          }).join('\n');
+    // ── 3. Call Groq via backend /api/v1/chat ─────────────────────────────
+    setIsTyping(true);
+    historyRef.current.push({ role: 'user', content: msg });
 
-        const fullText = extracted_summary
-          ? `Got it! Extracted:\n${extracted_summary}\n\n${missing.length > 0
-            ? `Still need: ${missing.join(', ')}`
-            : "Form is complete — click **Run Assessment** or say *\"assess now\"*!"}`
-          : botText;
-        addMessage('bot', fullText);
-      } else {
-        addMessage('bot', botText);
-      }
-    }, 400);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: historyRef.current,
+          form_context: updatedForm,
+          assessment_result: result || null,
+        }),
+      });
+      const data = await res.json();
+      const reply = data.reply || "I didn't understand that. Could you rephrase?";
+      setIsTyping(false);
+      addMessage('bot', reply);
+      historyRef.current.push({ role: 'assistant', content: reply });
+    } catch (err) {
+      console.error('Chat API error:', err);
+      setIsTyping(false);
+      // Graceful fallback to local rule-based response
+      const { text: botText } = generateBotResponse(msg, updatedForm, missing);
+      addMessage('bot', botText);
+      historyRef.current.push({ role: 'assistant', content: botText });
+    }
   };
 
   const handleKey = (e) => {
@@ -129,7 +138,7 @@ export default function ChatWindow({ form, onFormUpdate, onAssess, onPDF, loadin
           </div>
         ))}
 
-        {loading && (
+        {(loading || isTyping) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 28, height: 28, borderRadius: '50%',
               background: 'linear-gradient(135deg, #534AB7, #1D9E75)',
@@ -150,17 +159,26 @@ export default function ChatWindow({ form, onFormUpdate, onAssess, onPDF, loadin
         <div ref={bottomRef} />
       </div>
 
-      {/* Quick prompts */}
-      <div style={{ padding: '0 16px 8px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {QUICK_PROMPTS.map((p, i) => (
-          <button key={i} onClick={() => handleSend(p)}
-            style={{
-              padding: '5px 10px', background: '#EEEDFE', border: '1px solid #CECBF6',
-              borderRadius: 20, fontSize: 11, color: '#3C3489', cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap',
-            }}>{p.length > 30 ? p.slice(0, 28) + '…' : p}</button>
-        ))}
-      </div>
+      {/* Assessment grounded indicator */}
+      {result && (
+        <div style={{
+          margin: '0 16px 6px',
+          padding: '6px 12px',
+          background: 'linear-gradient(135deg, #E1F5EE, #EEEDFE)',
+          borderRadius: 8,
+          fontSize: 11,
+          color: '#0F6E56',
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <span>✅</span>
+          <span>Assessment loaded · Ask me anything about {result.locality || 'this property'}</span>
+        </div>
+      )}
+
+
 
       {/* Input */}
       <div style={{ padding: '8px 16px 16px', display: 'flex', gap: 8 }}>

@@ -1,66 +1,229 @@
-// PropIQ ImageUpload Component
+// PropIQ ImageUpload Component — Multi-image (exterior + interior)
 import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 
-export default function ImageUpload({ onImageSelect, image }) {
-  const [preview, setPreview] = useState(null);
+const TAG_COLORS = {
+  exterior: { bg: '#EEEDFE', color: '#534AB7', border: '#534AB7' },
+  interior: { bg: '#E1F5EE', color: '#0F6E56', border: '#0F6E56' },
+};
 
-  const onDrop = useCallback((files) => {
-    const file = files[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    onImageSelect(file);
-  }, [onImageSelect]);
-
+function SingleDropzone({ label, tag, onAdd, disabled }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop, accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp'] },
-    maxFiles: 1, maxSize: 10 * 1024 * 1024,
+    onDrop: useCallback(
+      (files) => files.forEach((f) => onAdd(f, tag)),
+      [onAdd, tag]
+    ),
+    accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp'] },
+    maxFiles: 5,
+    maxSize: 10 * 1024 * 1024,
+    disabled,
   });
 
-  const clear = (e) => {
-    e.stopPropagation();
-    setPreview(null);
-    onImageSelect(null);
-    if (preview) URL.revokeObjectURL(preview);
+  const col = TAG_COLORS[tag];
+
+  return (
+    <div
+      {...getRootProps()}
+      style={{
+        flex: 1,
+        border: `2px dashed ${isDragActive ? col.border : 'rgba(44,44,42,0.18)'}`,
+        borderRadius: 10,
+        padding: '14px 10px',
+        textAlign: 'center',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        background: isDragActive ? col.bg : '#F7F6F2',
+        transition: 'all 0.15s',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <input {...getInputProps()} />
+      <div style={{ fontSize: 20, marginBottom: 4 }}>{tag === 'exterior' ? '🏠' : '🛋️'}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: col.color, marginBottom: 2 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 10, color: '#888780' }}>
+        {isDragActive ? 'Drop here...' : 'Click or drag'}
+      </div>
+    </div>
+  );
+}
+
+export default function ImageUpload({ onImagesChange, images = [] }) {
+  const addImage = useCallback(
+    (file, tag) => {
+      const url = URL.createObjectURL(file);
+      const newImages = [...images, { file, url, tag }];
+      onImagesChange(newImages);
+    },
+    [images, onImagesChange]
+  );
+
+  const removeImage = (idx) => {
+    const copy = [...images];
+    URL.revokeObjectURL(copy[idx].url);
+    copy.splice(idx, 1);
+    onImagesChange(copy);
   };
+
+  const maxReached = images.length >= 8;
 
   return (
     <div style={{ padding: '0 20px 16px' }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#5F5E5A',
-        textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-        Property Photo <span style={{ color: '#888780', fontWeight: 400,
-          textTransform: 'none', letterSpacing: 0 }}>(optional — enables CV scoring)</span>
+      {/* Header */}
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: '#5F5E5A',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <span>
+          Property Photos
+          <span
+            style={{
+              color: '#888780',
+              fontWeight: 400,
+              textTransform: 'none',
+              letterSpacing: 0,
+              marginLeft: 4,
+            }}
+          >
+            (optional)
+          </span>
+        </span>
+        {images.length > 0 && (
+          <span
+            style={{
+              background: '#EEEDFE',
+              color: '#534AB7',
+              borderRadius: 20,
+              padding: '2px 8px',
+              fontSize: 10,
+              fontWeight: 600,
+            }}
+          >
+            {images.length} / 8
+          </span>
+        )}
       </div>
 
-      {preview ? (
-        <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden',
-          border: '1px solid rgba(44,44,42,0.12)' }}>
-          <img src={preview} alt="Property" style={{ width: '100%', height: 140,
-            objectFit: 'cover', display: 'block' }} />
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)',
-            display: 'flex', alignItems: 'flex-end', padding: 10, justifyContent: 'space-between' }}>
-            <div style={{ background: '#0F6E56', color: '#fff', fontSize: 11, fontWeight: 600,
-              padding: '3px 10px', borderRadius: 20 }}>CV Analysis Active</div>
-            <button onClick={clear} style={{ background: 'rgba(0,0,0,0.5)', color: '#fff',
-              border: 'none', borderRadius: 20, padding: '3px 10px', fontSize: 11,
-              cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Remove</button>
-          </div>
+      {/* Drop zones */}
+      {!maxReached && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: images.length > 0 ? 10 : 0 }}>
+          <SingleDropzone label="Exterior" tag="exterior" onAdd={addImage} />
+          <SingleDropzone label="Interior" tag="interior" onAdd={addImage} />
         </div>
-      ) : (
-        <div {...getRootProps()} style={{
-          border: `2px dashed ${isDragActive ? '#534AB7' : 'rgba(44,44,42,0.18)'}`,
-          borderRadius: 10, padding: '20px 16px', textAlign: 'center', cursor: 'pointer',
-          background: isDragActive ? '#EEEDFE' : '#F7F6F2', transition: 'all 0.15s',
-        }}>
-          <input {...getInputProps()} />
-          <div style={{ fontSize: 24, marginBottom: 6 }}>📷</div>
-          <div style={{ fontSize: 12, fontWeight: 500, color: '#534AB7', marginBottom: 3 }}>
-            {isDragActive ? 'Drop the photo here...' : 'Upload property photo'}
-          </div>
-          <div style={{ fontSize: 11, color: '#888780' }}>
-            CLIP AI will assess condition · JPG, PNG up to 10MB
-          </div>
+      )}
+
+      {/* Preview grid */}
+      {images.length > 0 && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: 6,
+          }}
+        >
+          {images.map((img, i) => {
+            const col = TAG_COLORS[img.tag];
+            return (
+              <div
+                key={i}
+                style={{
+                  position: 'relative',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  border: `1.5px solid ${col.border}`,
+                }}
+              >
+                <img
+                  src={img.url}
+                  alt={img.tag}
+                  style={{ width: '100%', height: 64, objectFit: 'cover', display: 'block' }}
+                />
+                {/* Tag badge */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 3,
+                    left: 3,
+                    background: col.bg,
+                    color: col.color,
+                    fontSize: 9,
+                    fontWeight: 700,
+                    padding: '1px 5px',
+                    borderRadius: 4,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {img.tag}
+                </div>
+                {/* Remove button */}
+                <button
+                  onClick={() => removeImage(i)}
+                  style={{
+                    position: 'absolute',
+                    top: 3,
+                    right: 3,
+                    background: 'rgba(0,0,0,0.55)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: 18,
+                    height: 18,
+                    fontSize: 10,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {maxReached && (
+        <div
+          style={{
+            fontSize: 10,
+            color: '#888780',
+            textAlign: 'center',
+            marginTop: 6,
+            padding: '4px 8px',
+            background: '#F1EFE8',
+            borderRadius: 6,
+          }}
+        >
+          Max 8 images reached. Remove one to add more.
+        </div>
+      )}
+
+      {images.length > 0 && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 10,
+            color: '#0F6E56',
+            fontWeight: 600,
+            textAlign: 'center',
+            background: '#E1F5EE',
+            borderRadius: 6,
+            padding: '4px 0',
+          }}
+        >
+          📷 {images.length} image{images.length > 1 ? 's' : ''} · CV analysis active
         </div>
       )}
     </div>

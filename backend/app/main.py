@@ -331,3 +331,155 @@ async def get_trends(locality: str, prop_type: str = "2bhk_apartment", months: i
 @app.get("/api/v1/audit/recent", tags=["Audit"], summary="Recent assessment log (RBI audit trail)")
 async def audit_recent(limit: int = 20, auth=Depends(get_api_key)):
     return {"assessments": get_recent_assessments(limit), "stats": get_audit_stats()}
+
+
+# ── Chat Assistant ──────────────────────────────────────────────────────────
+
+from pydantic import BaseModel as _BaseModel
+from typing import Optional as _Optional
+
+class ChatMessage(_BaseModel):
+    role: str          # "user" | "assistant"
+    content: str
+
+class ChatRequest(_BaseModel):
+    messages: list[ChatMessage]
+    form_context: dict = {}           # current property form state
+    assessment_result: _Optional[dict] = None  # full assessment JSON if available
+
+_CHAT_SYSTEM_PROMPT = """You are PropIQ, an expert AI property collateral assessment assistant for Poonawalla Fincorp.
+You help loan officers evaluate properties for LAP (Loan Against Property) underwriting in India (Pune, Mumbai, Bangalore).
+
+Your role:
+- If assessment data is provided below, use it to answer specific questions accurately (valuations, risk, LTV, trends, etc.).
+- Help users describe properties and extract: locality, type, size (sqft), building age, floor.
+- Answer questions about collateral valuation, LTV norms, market trends, RERA, IGR circle rates, and risk factors.
+- Be concise, professional, and precise. Use Indian real-estate terminology (₹ Cr / L, BHK, LAP, RERA, IGR, etc.).
+- When a user asks about "the property" or "the assessment", refer ONLY to the assessment data provided — do not invent numbers.
+- Keep replies under 150 words unless the user explicitly asks for more detail."""
+
+
+def _build_assessment_context(r: dict) -> str:
+    """Convert assessment JSON into a compact text grounding block for the LLM."""
+    if not r:
+        return ""
+
+    def fmt(v):
+        if v >= 10_000_000: return f"₹{v/10_000_000:.2f} Cr"
+        if v >= 100_000:    return f"₹{v/100_000:.2f} L"
+        return f"₹{v:,}"
+
+    mv  = r.get("market_value_range", [0, 0])
+    dv  = r.get("distress_value_range", [0, 0])
+    mid = r.get("market_value_mid", 0)
+    rpi = r.get("resale_potential_index", 0)
+    conf = r.get("confidence_score", 0)
+    ppsf = r.get("price_per_sqft_estimate", 0)
+    flags = r.get("risk_flags", [])
+    drivers = r.get("key_drivers", [])
+    enr = r.get("enrichment", {})
+    ltv = r.get("ltv_analysis", {})
+    comps = r.get("comps", [])
+    trend = r.get("trend_summary", {})
+    memo = r.get("credit_memo", {})
+    cv = r.get("cv_assessment", {})
+
+    lines = [
+        "=== PROPIQ ASSESSMENT RESULTS (use these numbers to answer user questions) ===",
+        f"Property : {r.get('prop_type','').replace('_',' ').title()} in {r.get('locality','')}, {r.get('city','Pune')}",
+        f"Size     : {r.get('size_sqft',0):,} sqft",
+        f"Market Value Range : {fmt(mv[0])} – {fmt(mv[1])}  (mid: {fmt(mid)})",
+        f"Distress Value     : {fmt(dv[0])} – {fmt(dv[1])}",
+        f"Price/sqft estimate: ₹{ppsf:,}/sqft",
+        f"Resale Potential Index (RPI): {rpi}/100  ({'Highly Liquid' if rpi>=75 else 'Moderate' if rpi>=50 else 'Illiquid'})",
+        f"Confidence Score   : {conf:.0%}",
+        f"Zone Tier          : {enr.get('zone_tier','').title()}",
+        f"Circle Rate        : ₹{enr.get('circle_rate_per_sqft',0):,}/sqft (IGR Maharashtra)",
+        f"Infra Score        : {enr.get('infra_score',0):.0f}/100",
+    ]
+
+    if flags:
+        def _flag_str(fl):
+            sev = fl.get('severity', '')
+            suffix = f' (severity: {sev})' if sev else ''
+            return fl['flag'].replace('_', ' ') + suffix
+        lines.append(f"Risk Flags ({len(flags)}): " + "; ".join(_flag_str(fl) for fl in flags))
+    else:
+        lines.append("Risk Flags: None detected")
+
+    if drivers:
+        lines.append("Key Value Drivers: " + ", ".join(f"{d['feature'].replace('_',' ')} ({d.get('direction','+')})" for d in drivers[:5]))
+
+    if ltv:
+        lines.append(f"Recommended LTV    : {ltv.get('recommended_ltv_pct',0):.1f}%  (max loan: {fmt(ltv.get('max_loan_amount',0))})")
+        lines.append(f"LTV Risk Band      : {ltv.get('risk_band','')}")
+
+    if comps:
+        lines.append(f"Comparable Sales   : {len(comps)} comps found, avg ₹{sum(c.get('price_per_sqft',0) for c in comps)//max(len(comps),1):,}/sqft")
+
+    if trend:
+        lines.append(f"Price Trend (24M)  : {trend.get('direction','').title()}, {trend.get('appreciation_pct',0):.1f}% change, momentum: {trend.get('momentum','')}")
+
+    if cv and cv.get("condition"):
+        lines.append(f"CV Image Condition : {cv.get('condition','').title()} (adjustment: {cv.get('valuation_adjustment_factor',1.0):.2f}x)")
+
+    if memo and memo.get("summary"):
+        lines.append(f"Credit Memo Summary: {memo['summary']}")
+        lines.append(f"Recommendation     : {memo.get('recommendation','')}")
+
+    lines.append("=== END OF ASSESSMENT DATA ===")
+    return "\n".join(lines)
+
+
+@app.post("/api/v1/chat", tags=["Chat"], summary="Groq-powered chat assistant, grounded in assessment results")
+async def chat_assistant(req: ChatRequest):
+    import os
+    from pathlib import Path as _Path
+    from dotenv import load_dotenv as _load_dotenv
+
+    _proj_root = _Path(__file__).parent.parent.parent
+    _load_dotenv(_proj_root / ".env", override=False)
+
+    api_key = os.getenv("GROQ_API_KEY", "")
+    print(f"[Chat] GROQ_API_KEY: {'SET' if api_key else 'MISSING'}")
+
+    # ── Build system prompt ────────────────────────────────────────────────
+    system_msg = _CHAT_SYSTEM_PROMPT
+
+    # Append form context
+    ctx_parts = []
+    f = req.form_context
+    if f.get("locality"):    ctx_parts.append(f"Locality: {f['locality']}")
+    if f.get("prop_type"):   ctx_parts.append(f"Type: {f['prop_type'].replace('_',' ')}")
+    if f.get("size_sqft"):   ctx_parts.append(f"Size: {f['size_sqft']} sqft")
+    if f.get("age_years") is not None: ctx_parts.append(f"Age: {f['age_years']} years")
+    if ctx_parts:
+        system_msg += "\n\nCurrent form state: " + ", ".join(ctx_parts)
+
+    # Append assessment grounding data if available
+    assessment_ctx = _build_assessment_context(req.assessment_result or {})
+    if assessment_ctx:
+        system_msg += "\n\n" + assessment_ctx
+
+    if not api_key:
+        return {"reply": "⚠️ GROQ_API_KEY not found. Please add it to your .env file and restart the server."}
+
+    try:
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+        messages_payload = [{"role": "system", "content": system_msg}]
+        for m in req.messages[-12:]:   # last 12 turns for good context
+            messages_payload.append({"role": m.role, "content": m.content})
+
+        completion = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages_payload,
+            max_tokens=250,
+            temperature=0.4,
+        )
+        reply = completion.choices[0].message.content.strip()
+        return {"reply": reply}
+    except Exception as e:
+        error_detail = str(e)
+        print(f"[Chat] LLM error: {error_detail}")
+        return {"reply": f"I'm having trouble connecting to the AI right now. Error: {error_detail[:120]}"}
