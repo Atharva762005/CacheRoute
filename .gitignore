@@ -9,7 +9,6 @@ venv/
 
 # Model artifacts (large files)
 backend/data/models/*.ubj
-backend/data/models/*.pkl
 backend/data/processed/*.csv
 
 # Databases (Local data)
