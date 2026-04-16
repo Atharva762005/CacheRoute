@@ -8,7 +8,7 @@ PropIQ Valuation Model
 
 import numpy as np
 import pandas as pd
-import shap
+# import shap  <-- Moved inside methods for lazy loading
 import pickle
 import json
 from pathlib import Path
@@ -90,6 +90,7 @@ class PropIQModel:
         self.anomaly_detector.fit(X)
 
         print("Building SHAP explainer...")
+        import shap
         self.shap_explainer = shap.TreeExplainer(self.model_p50)
 
         # Validation MAPE
@@ -136,6 +137,7 @@ class PropIQModel:
         confidence = self._confidence_score(input_data, liq_score, mv_high - mv_low, mv_mid)
 
         # SHAP values
+        import shap
         shap_vals = self.shap_explainer.shap_values(X)
         shap_dict = {
             feat: round(float(np.expm1(abs(val)) - 1) * p50_sqft * size * np.sign(val))

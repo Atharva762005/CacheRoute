@@ -5,7 +5,7 @@ Outputs: condition class, quality score (0-100), valuation adjustment factor.
 No fine-tuning needed — zero-shot CLIP with domain-specific text prompts.
 """
 
-import torch
+# Standard imports
 import numpy as np
 from PIL import Image
 from pathlib import Path
@@ -13,11 +13,7 @@ from typing import Union
 import io
 import base64
 
-try:
-    from transformers import CLIPProcessor, CLIPModel
-    CLIP_AVAILABLE = True
-except ImportError:
-    CLIP_AVAILABLE = False
+# Heavy AI imports are moved inside PropertyCVAnalyzer for lazy loading to prevent startup timeouts
 
 CONDITION_PROMPTS = {
     "excellent": [
@@ -60,30 +56,36 @@ class PropertyCVAnalyzer:
     def _load_model(self):
         if self._loaded:
             return
-        if not CLIP_AVAILABLE:
-            print("CLIP not available — CV module disabled")
-            return
+            
         try:
+            import torch
+            from transformers import CLIPProcessor, CLIPModel
             print("Loading CLIP model (clip-vit-base-patch32)...")
             self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
             self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            self.model.eval()
+            
+            # Pre-compute text features for all condition prompts
+            all_texts = []
+            self._prompt_map = []  # (condition, prompt_idx)
+            for condition, prompts in CONDITION_PROMPTS.items():
+                for prompt in prompts:
+                    all_texts.append(prompt)
+                    self._prompt_map.append(condition)
+                    
+            with torch.no_grad():
+                inputs = self.processor(text=all_texts, return_tensors="pt", padding=True, truncation=True)
+                self.text_features = self.model.get_text_features(**inputs)
+                self.text_features = self.text_features / self.text_features.norm(dim=-1, keepdim=True)
+            
+            self._loaded = True
+            print("CLIP model loaded successfully")
+        except ImportError:
+            print("CLIP/Torch not available — CV module will use fallback")
+            self._loaded = False
         except Exception as e:
             print(f"CLIP model load failed ({e}) — CV module will use fallback")
-            return
-        self.model.eval()
-        # Pre-compute text features for all condition prompts
-        all_texts = []
-        self._prompt_map = []  # (condition, prompt_idx)
-        for condition, prompts in CONDITION_PROMPTS.items():
-            for prompt in prompts:
-                all_texts.append(prompt)
-                self._prompt_map.append(condition)
-        with torch.no_grad():
-            inputs = self.processor(text=all_texts, return_tensors="pt", padding=True, truncation=True)
-            self.text_features = self.model.get_text_features(**inputs)
-            self.text_features = self.text_features / self.text_features.norm(dim=-1, keepdim=True)
-        self._loaded = True
-        print("CLIP model loaded successfully")
+            self._loaded = False
 
     def analyze_image(self, image_input: Union[str, bytes, Image.Image]) -> dict:
         """
@@ -115,6 +117,7 @@ class PropertyCVAnalyzer:
             return {"error": str(e), **self._fallback_response(image_input)}
 
         # Get image features
+        import torch
         with torch.no_grad():
             inputs = self.processor(images=image, return_tensors="pt")
             image_features = self.model.get_image_features(**inputs)
