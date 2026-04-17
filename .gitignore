@@ -7,8 +7,9 @@ venv/
 *.egg-info/
 .pytest_cache/
 
-# Model artifacts (large files)
+# Model artifacts (large files — rebuilt fresh on every deploy)
 backend/data/models/*.ubj
+backend/data/models/*.pkl
 backend/data/processed/*.csv
 
 # Databases (Local data)
