@@ -130,13 +130,13 @@ export default function App() {
 
   const closeDrawer = () => setDrawer(null);
 
-  const handleAssess = useCallback(async () => {
+  const handleAssess = useCallback(async (options = {}) => {
     if (!form.locality || !form.prop_type || !form.size_sqft || form.age_years === '') {
       toast.error('Please fill: location, property type, size, and age');
       return;
     }
     setLoading(true);
-    closeDrawer();
+    if (!options.keepDrawer) closeDrawer();
     try {
       const payload = resolvedLocation
         ? { ...form, geo_lat: resolvedLocation.lat, geo_lon: resolvedLocation.lon }

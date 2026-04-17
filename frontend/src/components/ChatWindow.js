@@ -18,10 +18,21 @@ export default function ChatWindow({ form, onFormUpdate, onAssess, onPDF, loadin
   const bottomRef = useRef(null);
   // Keep history for Groq context (role: 'user'|'assistant')
   const historyRef = useRef([]);
+  const pendingAutoAssessRef = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // ── Agentic auto-assess: trigger assessment after form auto-fill ──────
+  useEffect(() => {
+    if (pendingAutoAssessRef.current && form.locality && form.prop_type &&
+        form.size_sqft && form.age_years !== '') {
+      pendingAutoAssessRef.current = false;
+      const tid = setTimeout(() => onAssess({ keepDrawer: true }), 500);
+      return () => clearTimeout(tid);
+    }
+  }, [form, onAssess]);
 
   const addMessage = (role, text, extra = {}) => {
     setMessages(prev => [...prev, { id: Date.now(), role, text, ...extra }]);
@@ -38,26 +49,32 @@ export default function ChatWindow({ form, onFormUpdate, onAssess, onPDF, loadin
     const updatedForm = { ...form, ...extracted };
     if (Object.keys(extracted).length > 0) onFormUpdate(updatedForm);
 
-    // ── 2. Check for local action triggers (assess / pdf) ─────────────────
+    // ── 2. Check if this looks like a full property description ─────────────
     const lowerMsg = msg.toLowerCase();
-    const isAssessAction = lowerMsg.includes('assess') || lowerMsg.includes('value') ||
-      lowerMsg.includes('valuat') || lowerMsg.includes('how much') ||
-      lowerMsg.includes('worth') || lowerMsg.includes('price');
-    const isPdfAction = lowerMsg.includes('pdf') || lowerMsg.includes('report') || lowerMsg.includes('download');
+    const hasEnoughForAutoAssess = extracted.locality && extracted.prop_type &&
+      (extracted.size_sqft || extracted.age_years !== undefined);
 
-    if (isAssessAction) {
-      addMessage('bot', 'Running the assessment now...');
-      setTimeout(() => onAssess(), 300);
-      historyRef.current.push({ role: 'user', content: msg },
-        { role: 'assistant', content: 'Running the assessment now...' });
-      return;
-    }
-    if (isPdfAction) {
-      addMessage('bot', 'Generating your RBI-ready PDF report...');
-      setTimeout(() => onPDF(), 300);
-      historyRef.current.push({ role: 'user', content: msg },
-        { role: 'assistant', content: 'Generating your RBI-ready PDF report...' });
-      return;
+    // ── 3. Simple command triggers (skip when full description → let backend LLM handle) ──
+    if (!hasEnoughForAutoAssess) {
+      const isAssessAction = lowerMsg.includes('assess') || lowerMsg.includes('value') ||
+        lowerMsg.includes('valuat') || lowerMsg.includes('how much') ||
+        lowerMsg.includes('worth') || lowerMsg.includes('price');
+      const isPdfAction = lowerMsg.includes('pdf') || lowerMsg.includes('report') || lowerMsg.includes('download');
+
+      if (isAssessAction) {
+        addMessage('bot', 'Running the assessment now...');
+        setTimeout(() => onAssess({ keepDrawer: true }), 300);
+        historyRef.current.push({ role: 'user', content: msg },
+          { role: 'assistant', content: 'Running the assessment now...' });
+        return;
+      }
+      if (isPdfAction) {
+        addMessage('bot', 'Generating your RBI-ready PDF report...');
+        setTimeout(() => onPDF(), 300);
+        historyRef.current.push({ role: 'user', content: msg },
+          { role: 'assistant', content: 'Generating your RBI-ready PDF report...' });
+        return;
+      }
     }
 
     // ── 3. Call Groq via backend /api/v1/chat ─────────────────────────────
@@ -77,6 +94,29 @@ export default function ChatWindow({ form, onFormUpdate, onAssess, onPDF, loadin
       const data = await res.json();
       const reply = data.reply || "I didn't understand that. Could you rephrase?";
       setIsTyping(false);
+
+      // ── Handle agentic auto-assess ───────────────────────────────────
+      if (data.action === 'auto_assess' && data.extracted_fields) {
+        const fields = data.extracted_fields;
+        const autoForm = {
+          locality: fields.locality,
+          prop_type: fields.prop_type,
+          size_sqft: fields.size_sqft,
+          age_years: fields.age_years,
+          floor_num: fields.floor_num ?? 3,
+          is_freehold: fields.is_freehold ?? 1,
+          is_rera_registered: fields.is_rera_registered ?? 1,
+          occupancy: fields.occupancy || 'self_occupied',
+          rental_yield_pct: fields.rental_yield_pct || 0,
+        };
+        onFormUpdate(autoForm);
+        addMessage('bot', reply);
+        historyRef.current.push({ role: 'assistant', content: reply });
+        pendingAutoAssessRef.current = true;
+        return;
+      }
+
+      // ── Normal reply ────────────────────────────────────────────────
       addMessage('bot', reply);
       historyRef.current.push({ role: 'assistant', content: reply });
     } catch (err) {

@@ -431,7 +431,65 @@ def _build_assessment_context(r: dict) -> str:
     return "\n".join(lines)
 
 
-@app.post("/api/v1/chat", tags=["Chat"], summary="Groq-powered chat assistant, grounded in assessment results")
+# ── Agentic Auto-Assessment — Property Field Extraction ───────────────────
+
+_EXTRACTION_SYSTEM_PROMPT = """You are a property data extraction engine for PropIQ (India real estate).
+Analyze the user message. If they describe a SPECIFIC property for valuation/assessment, extract details.
+Return ONLY valid JSON.
+
+RULES:
+- Return {"found": false} if the user is greeting, asking a general question, or NOT describing a specific property
+- Return {"found": true, ...} ONLY when the user provides details of a property they want valued
+- You MUST extract at least: locality, prop_type, size_sqft, and age_years to return found=true
+- Match locality names EXACTLY to the supported list (pick the closest match)
+
+Supported localities:
+Pune: Koregaon Park, Shivajinagar, Baner, Kothrud, Aundh, Viman Nagar, Wakad, Hinjewadi, Hadapsar, Pimpri, Chinchwad, Katraj, Wagholi, Talegaon, Chakan, Ambegaon
+Mumbai: Bandra West, Worli, Powai, Andheri West, Andheri East, Thane, Navi Mumbai, Dadar, Borivali, Mira Road, Virar, Kharghar
+Bangalore: Koramangala, Indiranagar, Whitefield, HSR Layout, Electronic City, Marathahalli, Sarjapur Road, Yelahanka, Bannerghatta, Devanahalli, Tumkur Road
+
+Property types: 1bhk_apartment, 2bhk_apartment, 3bhk_apartment, 4bhk_apartment, villa, shop, office, plot
+Mapping: "flat"/"apartment" without BHK → 2bhk_apartment, "3 bedroom"/"3BR"/"3BHK" → 3bhk_apartment, "bungalow" → villa, "commercial"/"showroom" → shop
+
+For found=true return:
+{"found": true, "locality": "ExactName", "prop_type": "type_key", "size_sqft": number, "age_years": number, "floor_num": number, "is_freehold": 1, "is_rera_registered": 1}
+
+Defaults when not mentioned: floor_num=3, is_freehold=1, is_rera_registered=1
+For found=false return: {"found": false}"""
+
+
+async def _extract_property_fields(message: str, api_key: str):
+    """Use Groq fast model to extract structured property fields from natural language."""
+    if len(message.strip()) < 15:
+        return None
+    try:
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=api_key)
+        completion = await client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
+                {"role": "user", "content": message},
+            ],
+            max_tokens=200,
+            temperature=0.05,
+            response_format={"type": "json_object"},
+        )
+        text = completion.choices[0].message.content.strip()
+        result = json.loads(text)
+        if (result.get("found")
+                and result.get("locality")
+                and result.get("prop_type")
+                and result.get("size_sqft")
+                and result.get("age_years") is not None):
+            print(f"[Chat] Extracted property: {result.get('locality')} {result.get('prop_type')}")
+            return result
+    except Exception as e:
+        print(f"[Chat] Extraction error (non-fatal): {e}")
+    return None
+
+
+@app.post("/api/v1/chat", tags=["Chat"], summary="Groq-powered chat assistant with agentic auto-assessment")
 async def chat_assistant(req: ChatRequest):
     import os
     from pathlib import Path as _Path
@@ -465,6 +523,33 @@ async def chat_assistant(req: ChatRequest):
         return {"reply": "⚠️ GROQ_API_KEY not found. Please add it to your .env file and restart the server."}
 
     try:
+        # ── Step 1: Agentic extraction — detect property descriptions ──────
+        last_user_msg = ""
+        for m in reversed(req.messages):
+            if m.role == "user":
+                last_user_msg = m.content
+                break
+
+        extraction = await _extract_property_fields(last_user_msg, api_key)
+
+        if extraction:
+            fields = {k: v for k, v in extraction.items() if k != "found" and v is not None}
+            pt = fields.get("prop_type", "").replace("_", " ").title()
+            loc = fields.get("locality", "")
+            sz = fields.get("size_sqft", 0)
+            age = fields.get("age_years", 0)
+            reply = (
+                f"🎯 **Auto-detected property:**\n"
+                f"• **{pt}** in **{loc}**\n"
+                f"• {sz:,.0f} sqft · {age} years old\n"
+                f"• Floor {fields.get('floor_num', 3)} · "
+                f"{'Freehold' if fields.get('is_freehold', 1) else 'Leasehold'} · "
+                f"{'RERA ✓' if fields.get('is_rera_registered', 1) else 'No RERA'}\n\n"
+                f"⚡ **Running full assessment automatically...**"
+            )
+            return {"reply": reply, "action": "auto_assess", "extracted_fields": fields}
+
+        # ── Step 2: Normal Groq chat ───────────────────────────────────────
         from groq import AsyncGroq
         client = AsyncGroq(api_key=api_key)
         messages_payload = [{"role": "system", "content": system_msg}]
