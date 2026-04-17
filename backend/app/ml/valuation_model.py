@@ -257,8 +257,9 @@ class PropIQModel:
             return pickle.load(f)
 
 if __name__ == "__main__":
-    data_path = Path(__file__).parent.parent.parent / "data" / "processed" / "synthetic_training_data.csv"
-    model_path = str(Path(__file__).parent.parent.parent / "data" / "models")
+    _here = Path(__file__).parent.parent.parent   # → backend/
+    data_path = _here / "data" / "processed" / "synthetic_training_data.csv"
+    model_path = str(_here / "data" / "models")
     df = pd.read_csv(data_path)
     print(f"Loaded {len(df)} training records")
     model = PropIQModel()

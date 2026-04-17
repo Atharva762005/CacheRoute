@@ -8,8 +8,13 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import sys
-sys.path.append(str(Path(__file__).parent.parent))
-from data.pune_circle_rates import PUNE_CIRCLE_RATES, ZONE_MULTIPLIERS
+
+# Support both `python -m app.ml.data_generator` (from backend/) and direct run
+_backend_dir = Path(__file__).parent.parent.parent
+if str(_backend_dir) not in sys.path:
+    sys.path.insert(0, str(_backend_dir))
+
+from app.data.india_circle_rates import ALL_CIRCLE_RATES, ZONE_MULTIPLIERS
 
 np.random.seed(42)
 
@@ -185,7 +190,7 @@ def generate_record(locality: str, zone_data: dict, prop_type: str) -> dict:
 
 def generate_dataset(n_per_combination: int = 12) -> pd.DataFrame:
     records = []
-    for locality, zone_data in PUNE_CIRCLE_RATES.items():
+    for locality, zone_data in ALL_CIRCLE_RATES.items():
         for prop_type in PROPERTY_CONFIGS.keys():
             for _ in range(n_per_combination):
                 records.append(generate_record(locality, zone_data, prop_type))
