@@ -140,7 +140,7 @@ class PropIQModel:
         import shap
         shap_vals = self.shap_explainer.shap_values(X)
         shap_dict = {
-            feat: round(float(np.expm1(abs(val)) - 1) * p50_sqft * size * np.sign(val))
+            feat: round(float(np.expm1(val)) * p50_sqft * size)
             for feat, val in zip(self.feature_cols_full, shap_vals[0])
         }
         top_drivers = sorted(shap_dict.items(), key=lambda x: abs(x[1]), reverse=True)[:5]

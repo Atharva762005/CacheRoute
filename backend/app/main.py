@@ -29,24 +29,32 @@ app = FastAPI(
     description="""
 ## PropIQ v2.0 — Agentic Collateral Valuation for NBFC/LAP Underwriting
 
-**3 cities · 39 localities · MAPE 8.3% · 90-second assessment**
+**3 cities (Pune, Mumbai, Bangalore) · 39 Localities · MAPE 8.3%**
 
-### Authentication
-Pass `X-API-Key: propiq-demo-2026` in headers. Unauthenticated requests allowed (demo mode, 50 req/min).
+PropIQ is a complete, production-ready collateral underwriting operating system built for the Poonawalla Fincorp Hackathon. We went entirely beyond the core problem statement to deliver a comprehensive suite of lending tools.
 
-### Core Endpoints
-| Endpoint | Description |
-|----------|-------------|
-| `POST /api/v1/assess` | Full valuation (JSON) |
-| `POST /api/v1/assess/image` | Valuation + CV condition |
-| `POST /api/v1/assess/pdf` | Valuation + PDF download |
-| `POST /api/v1/assess/narrate` | Valuation + LLM credit memo |
-| `POST /api/v1/assess/ltv` | Valuation + LTV calculation |
-| `POST /api/v1/assess/batch` | Bulk assessment (up to 50) |
-| `GET /api/v1/comps` | Comparable sales |
-| `GET /api/v1/trends/{locality}` | 24-month price trend |
-| `GET /api/v1/localities` | All supported localities |
-| `GET /api/v1/audit/recent` | Recent assessment log |
+*   **Agentic Auto-Valuation (LLM):** Natural language parsing extracts property structured data and triggers the entire valuation ML pipeline automatically via the `/api/v1/chat` endpoint.
+*   **Multimodal CV Scoring (Zero-Shot CLIP):** Evaluates *multiple* exterior & interior property images simultaneously, producing a weighted structural condition score that dynamically haircuts or uplifts the XGBoost valuation.
+*   **LLM Credit Memos:** Leverages Llama-3.3-70B to synthesize complex data points (comps, LTV, zone liquidity) into a committee-ready human-readable credit narrative.
+*   **RBI-Compliant LTV Engine:** Calculates maximum safe loan amounts adjusting for property type, localized zone tiers (Prime/Mid/Peripheral), and model-generated risk flags.
+*   **Batch Portfolio Assessment:** Concurrently processes up to 50 properties at once for bulk portfolio liquidation checks.
+*   **Explainable AI:** XGBoost engine integrated with SHAP to extract the top local price drivers (e.g. 'Listing Density contributes +₹53 Cr' vs 'Leasehold status deducts -₹20 L').
+
+
+### 🔌 API Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/assess` | Standard full valuation model inference |
+| `POST` | `/api/v1/chat` | **[AGENTIC]** Natural language property setup & assessment |
+| `POST` | `/api/v1/assess/image` | **[CV]** Assessment + Multi-image structural grading |
+| `POST` | `/api/v1/assess/full` | **[KITCHEN-SINK]** Valuation + Comps + Trends + LTV + Narratives |
+| `POST` | `/api/v1/assess/narrate` | **[LLM]** Valuation returning generated Credit Memo |
+| `POST` | `/api/v1/assess/ltv` | **[AUDIT]** Valuation + RBI LTV limits |
+| `POST` | `/api/v1/assess/batch` | **[PORTFOLIO]** Bulk assessment execution (up to 50) |
+| `POST` | `/api/v1/assess/pdf` | Generates formatted PDF download |
+| `GET` | `/api/v1/comps` | Query comparable sales in the geo-cluster |
+| `GET` | `/api/v1/trends/{locality}` | 24-month liquidity & price momentum tracking |
+| `GET` | `/api/v1/audit/recent` | SQLite backed system audit logs |
     """,
     version="2.0.0",
     docs_url="/docs",
@@ -88,6 +96,10 @@ async def _run_assessment(prop: PropertyInput) -> dict:
         "request_id": request_id, "locality": cr_data["locality"],
         "city": cr_data.get("city", "Pune"),
         "prop_type": prop.prop_type, "size_sqft": prop.size_sqft,
+        "age_years": prop.age_years, "floor_num": prop.floor_num,
+        "is_freehold": prop.is_freehold, "is_rera_registered": prop.is_rera_registered,
+        "occupancy": prop.occupancy, "rental_yield_pct": prop.rental_yield_pct,
+        "geo_lat": getattr(prop, "geo_lat", None), "geo_lon": getattr(prop, "geo_lon", None),
         **prediction,
         "enrichment": {
             "zone_tier": zone_tier, "circle_rate_per_sqft": cr_data["circle_rate_per_sqft"],
@@ -131,40 +143,86 @@ async def assess_property(prop: PropertyInput, auth=Depends(get_api_key)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/v1/assess/image", tags=["Valuation"], summary="Assessment + CV image scoring")
+@app.post("/api/v1/assess/image", tags=["Valuation"], summary="Assessment + CV image scoring (multi-image, exterior+interior)")
 async def assess_with_image(
     locality: str = Form(...), prop_type: str = Form(...),
     size_sqft: float = Form(...), age_years: float = Form(...),
     floor_num: int = Form(default=3), is_freehold: int = Form(default=1),
     is_rera_registered: int = Form(default=1), occupancy: str = Form(default="self_occupied"),
     rental_yield_pct: float = Form(default=0.0),
-    image: UploadFile = File(...),
+    geo_lat: Optional[float] = Form(default=None),
+    geo_lon: Optional[float] = Form(default=None),
+    # Multi-image: accept up to 4 images
+    images: List[UploadFile] = File(default=[]),
+    image: Optional[UploadFile] = File(default=None),     # backwards compat single image
+    image_tag_0: str = Form(default="exterior"),
+    image_tag_1: str = Form(default="interior"),
+    image_tag_2: str = Form(default="exterior"),
+    image_tag_3: str = Form(default="interior"),
     auth=Depends(get_api_key),
 ):
     try:
         t0 = time.time()
-        prop = PropertyInput(locality=locality, prop_type=prop_type, size_sqft=size_sqft,
+        prop = PropertyInput(
+            locality=locality, prop_type=prop_type, size_sqft=size_sqft,
             age_years=age_years, floor_num=floor_num, is_freehold=is_freehold,
-            is_rera_registered=is_rera_registered, occupancy=occupancy, rental_yield_pct=rental_yield_pct)
+            is_rera_registered=is_rera_registered, occupancy=occupancy,
+            rental_yield_pct=rental_yield_pct,
+            geo_lat=geo_lat, geo_lon=geo_lon,
+        )
         result = await _run_assessment(prop)
-        
-        image_bytes = await image.read()
-        cv_result = get_cv_analyzer().analyze_image(image_bytes)
+
+        # ── Build image list with tags ────────────────────
+        tags_by_idx = [image_tag_0, image_tag_1, image_tag_2, image_tag_3]
+        image_items = []
+        all_uploads = list(images) or ([] if image is None else [image])
+        for idx, upload in enumerate(all_uploads):
+            img_bytes = await upload.read()
+            tag = tags_by_idx[idx] if idx < len(tags_by_idx) else "exterior"
+            image_items.append({"bytes": img_bytes, "tag": tag, "filename": upload.filename})
+
+        if not image_items:
+            raise HTTPException(status_code=400, detail="No images provided")
+
+        # ── CV Analysis: composite scoring ────────────────────
+        cv_result = get_cv_analyzer().analyze_multiple(image_items)
         adj = cv_result.get("valuation_adjustment_factor", 1.0)
+
+        # Apply adjustment to ALL value fields
         if adj != 1.0:
-            result["market_value_range"] = [round(v * adj) for v in result["market_value_range"]]
+            for key in ("market_value_range", "distress_value_range"):
+                result[key] = [round(v * adj) for v in result[key]]
             result["market_value_mid"] = round(result["market_value_mid"] * adj)
-            result["distress_value_range"] = [round(v * adj) for v in result["distress_value_range"]]
             result["price_per_sqft_estimate"] = round(result["price_per_sqft_estimate"] * adj)
+            # Also adjust the P10/P50/P90 if present
+            for k in ("p10", "p50", "p90"):
+                if k in result:
+                    result[k] = round(result[k] * adj)
+
+        # Add CV risk flag if condition is poor/fair
+        condition = cv_result.get("condition", "good")
+        if condition == "poor":
+            result.setdefault("risk_flags", []).append({
+                "flag": "cv_poor_condition",
+                "severity": "high",
+                "detail": f"CV analysis detected POOR property condition from {cv_result.get('images_count',1)} image(s). Significant valuation haircut applied."
+            })
+        elif condition == "fair":
+            result.setdefault("risk_flags", []).append({
+                "flag": "cv_fair_condition",
+                "severity": "medium",
+                "detail": f"CV analysis detected FAIR property condition. Moderate valuation discount applied."
+            })
+
         result["cv_assessment"] = cv_result
 
+        # ── Run all enrichments in parallel ────────────────────
         cr_data = get_circle_rate(prop.locality, prop.prop_type)
         comps_task = asyncio.to_thread(find_comps, prop.locality, prop.prop_type, prop.size_sqft, prop.age_years)
         trend_data = generate_price_trend(
             prop.locality, cr_data["zone_tier"], cr_data.get("city", "Pune"),
             result["price_per_sqft_estimate"], months=24)
         memo_task = generate_credit_memo(result)
-
         comps, memo = await asyncio.gather(comps_task, memo_task)
 
         result["comps"] = comps
@@ -179,8 +237,11 @@ async def assess_with_image(
 
         log_assessment(result, "/assess/image", has_image=True)
         return JSONResponse(content=result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/v1/assess/pdf", tags=["Valuation"], summary="Assessment + PDF report download")
 async def assess_and_pdf(prop: PropertyInput, auth=Depends(get_api_key)):
@@ -252,6 +313,8 @@ async def assess_full(prop: PropertyInput, auth=Depends(get_api_key)):
         log_assessment(result, "/assess/full")
         return result
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 # ── Batch ──────────────────────────────────────────────────────────────────

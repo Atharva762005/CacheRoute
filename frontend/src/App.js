@@ -159,10 +159,11 @@ export default function App() {
     }
   }, [form, images, resolvedLocation]);
 
-  const handlePDF = useCallback(async () => {
-    if (!form.locality) { toast.error('Run an assessment first'); return; }
+  const handlePDF = useCallback(async (customProps = null) => {
+    const propsToUse = customProps || form;
+    if (!propsToUse.locality) { toast.error('Run an assessment first'); return; }
     setLoadingPDF(true);
-    try { await downloadPDF(form); toast.success('PDF downloaded!'); }
+    try { await downloadPDF(propsToUse); toast.success('PDF downloaded!'); }
     catch { toast.error('PDF generation failed'); }
     finally { setLoadingPDF(false); }
   }, [form]);
@@ -336,9 +337,30 @@ export default function App() {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
         {mode === 'batch' ? (
-          <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-            <BatchUpload onViewProperty={setResult} />
-          </div>
+          <>
+            <div style={{ flex: '0 0 550px', overflowY: 'auto', borderRight: '1px solid rgba(44,44,42,0.10)', background: '#FAFAF8', paddingTop: 16 }}>
+              <BatchUpload onViewProperty={setResult} />
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              {result ? (
+                <ResultsDashboard result={result} onDownloadPDF={() => handlePDF(result)} loadingPDF={loadingPDF} />
+              ) : (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, textAlign: 'center' }}>
+                  <div style={{ width: 80, height: 80, borderRadius: 22, marginBottom: 24,
+                    background: 'linear-gradient(135deg,#EEEDFE,#E1F5EE)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38 }}>
+                    📊
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: '#2C2C2A', marginBottom: 10 }}>
+                    Batch Property Viewer
+                  </div>
+                  <div style={{ fontSize: 13, color: '#888780', maxWidth: 400, lineHeight: 1.8 }}>
+                    Run a batch assessment on the left, then click on any successfully assessed property in the list to view its complete dashboard and generate a PDF report.
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         ) : (
           <>
             {/* ── Chat Assistant inline panel ──────────────────── */}
@@ -484,7 +506,7 @@ export default function App() {
             {/* ── Results panel ────────────────────────────────── */}
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               {result ? (
-                <ResultsDashboard result={result} onDownloadPDF={handlePDF} loadingPDF={loadingPDF} />
+                <ResultsDashboard result={result} onDownloadPDF={() => handlePDF(result)} loadingPDF={loadingPDF} />
               ) : (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column',
                   alignItems: 'center', justifyContent: 'center', padding: 40, textAlign: 'center' }}>

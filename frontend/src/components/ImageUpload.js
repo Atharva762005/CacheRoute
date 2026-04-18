@@ -10,7 +10,7 @@ const TAG_COLORS = {
 function SingleDropzone({ label, tag, onAdd, disabled }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: useCallback(
-      (files) => files.forEach((f) => onAdd(f, tag)),
+      (files) => { if (files.length > 0) onAdd(files, tag); },
       [onAdd, tag]
     ),
     accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp'] },
@@ -48,12 +48,15 @@ function SingleDropzone({ label, tag, onAdd, disabled }) {
   );
 }
 
-export default function ImageUpload({ onImagesChange, images = [] }) {
-  const addImage = useCallback(
-    (file, tag) => {
-      const url = URL.createObjectURL(file);
-      const newImages = [...images, { file, url, tag }];
-      onImagesChange(newImages);
+export default function ImageUpload({ onImagesChange, images = [], disabled = false }) {
+  const addImages = useCallback(
+    (files, tag) => {
+      const newEntries = files.map((file) => ({
+        file,
+        url: URL.createObjectURL(file),
+        tag,
+      }));
+      onImagesChange([...images, ...newEntries]);
     },
     [images, onImagesChange]
   );
@@ -113,11 +116,10 @@ export default function ImageUpload({ onImagesChange, images = [] }) {
         )}
       </div>
 
-      {/* Drop zones */}
       {!maxReached && (
         <div style={{ display: 'flex', gap: 8, marginBottom: images.length > 0 ? 10 : 0 }}>
-          <SingleDropzone label="Exterior" tag="exterior" onAdd={addImage} />
-          <SingleDropzone label="Interior" tag="interior" onAdd={addImage} />
+          <SingleDropzone label="Exterior" tag="exterior" onAdd={addImages} disabled={disabled} />
+          <SingleDropzone label="Interior" tag="interior" onAdd={addImages} disabled={disabled} />
         </div>
       )}
 

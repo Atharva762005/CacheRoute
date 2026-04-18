@@ -107,7 +107,7 @@ function RPIGauge({ rpi }) {
         textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
         Resale Potential Index
       </div>
-      <svg width={112} height={68} style={{ display: 'block', margin: '0 auto' }}>
+      <svg width={112} height={74} style={{ display: 'block', margin: '0 auto' }}>
         {/* Track */}
         <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
           fill="none" stroke="#F1EFE8" strokeWidth={10} strokeLinecap="round" />
@@ -121,7 +121,7 @@ function RPIGauge({ rpi }) {
           fill="#2C2C2A">{Math.round(rpi)}</text>
         <text x={cx} y={cy + 10} textAnchor="middle" fontSize={10} fill="#888780">/100</text>
       </svg>
-      <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600,
+      <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600,
         color: col.text, background: col.bg, borderRadius: 20, padding: '3px 10px',
         display: 'inline-block' }}>{col.label}</div>
     </div>
@@ -232,23 +232,101 @@ export default function ResultsDashboard({ result, onDownloadPDF, loadingPDF }) 
               accent={risk_flags?.length === 0 ? '#0F6E56' : '#A32D2D'} />
           </div>
 
-          {/* CV Assessment if present */}
+          {/* CV Assessment — rich panel */}
           {cv_assessment?.image_analyzed && (
-            <div style={{ background: '#EEEDFE', border: '1px solid #CECBF6',
-              borderRadius: 12, padding: '12px 16px', marginBottom: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#3C3489', marginBottom: 6 }}>
-                CV Condition Assessment
+            <div style={{ marginBottom: 14 }}>
+              {/* Header */}
+              <div style={{ background: 'linear-gradient(135deg,#534AB7,#3C3489)',
+                borderRadius: '12px 12px 0 0', padding: '10px 16px',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>
+                  📷 CV Condition Assessment
+                </div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)' }}>
+                  {cv_assessment.images_count || 1} image{(cv_assessment.images_count||1) > 1 ? 's' : ''} analysed ·{' '}
+                  {cv_assessment.weighting || 'Single image'}
+                </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                <span>Condition: <strong>{cv_assessment.condition?.toUpperCase()}</strong></span>
-                <span>Quality: <strong>{cv_assessment.quality_score?.toFixed(0)}/100</strong></span>
-                <span style={{ color: cv_assessment.valuation_adjustment_factor > 1 ? '#0F6E56' : '#A32D2D', fontWeight: 700 }}>
-                  {cv_assessment.valuation_adjustment_factor > 1 ? '+' : ''}
-                  {((cv_assessment.valuation_adjustment_factor - 1) * 100).toFixed(0)}% adj.
-                </span>
+
+              {/* Body */}
+              <div style={{ background: '#EEEDFE', border: '1px solid #CECBF6',
+                borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '12px 16px' }}>
+
+                {/* Composite condition + quality */}
+                <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                  {/* Condition badge */}
+                  <div style={{ flex: 1, background: '#fff', borderRadius: 10,
+                    padding: '10px 12px', textAlign: 'center',
+                    border: `2px solid ${
+                      cv_assessment.condition === 'excellent' ? '#0F6E56' :
+                      cv_assessment.condition === 'good' ? '#534AB7' :
+                      cv_assessment.condition === 'fair' ? '#BA7517' : '#A32D2D'}` }}>
+                    <div style={{ fontSize: 11, color: '#888780', marginBottom: 3 }}>Composite</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, textTransform: 'uppercase',
+                      color: cv_assessment.condition === 'excellent' ? '#0F6E56' :
+                             cv_assessment.condition === 'good' ? '#534AB7' :
+                             cv_assessment.condition === 'fair' ? '#BA7517' : '#A32D2D' }}>
+                      {cv_assessment.condition}
+                    </div>
+                  </div>
+                  {/* Quality score */}
+                  <div style={{ flex: 1, background: '#fff', borderRadius: 10,
+                    padding: '10px 12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, color: '#888780', marginBottom: 3 }}>Quality</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#2C2C2A' }}>
+                      {cv_assessment.quality_score?.toFixed(0)}<span style={{ fontSize: 11 }}>/100</span>
+                    </div>
+                  </div>
+                  {/* Confidence */}
+                  <div style={{ flex: 1, background: '#fff', borderRadius: 10,
+                    padding: '10px 12px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, color: '#888780', marginBottom: 3 }}>Confidence</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#2C2C2A' }}>
+                      {Math.round((cv_assessment.cv_confidence || 0) * 100)}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* Exterior / Interior split (when multi-image) */}
+                {cv_assessment.exterior_condition && cv_assessment.interior_condition && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                    <div style={{ flex: 1, background: 'rgba(255,255,255,0.7)',
+                      borderRadius: 8, padding: '7px 10px', fontSize: 12 }}>
+                      <span style={{ color: '#888780' }}>🏢 Exterior: </span>
+                      <strong style={{ textTransform: 'capitalize' }}>{cv_assessment.exterior_condition}</strong>
+                      <span style={{ color: '#888780', fontSize: 10 }}> (60% weight)</span>
+                    </div>
+                    <div style={{ flex: 1, background: 'rgba(255,255,255,0.7)',
+                      borderRadius: 8, padding: '7px 10px', fontSize: 12 }}>
+                      <span style={{ color: '#888780' }}>🛋 Interior: </span>
+                      <strong style={{ textTransform: 'capitalize' }}>{cv_assessment.interior_condition}</strong>
+                      <span style={{ color: '#888780', fontSize: 10 }}> (40% weight)</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Adjustment banner */}
+                <div style={{
+                  background: cv_assessment.valuation_adjustment_factor > 1
+                    ? 'rgba(15,110,86,0.12)' : cv_assessment.valuation_adjustment_factor < 1
+                    ? 'rgba(163,45,45,0.10)' : 'rgba(83,74,183,0.08)',
+                  borderRadius: 8, padding: '8px 12px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <span style={{ fontSize: 12, color: '#2C2C2A' }}>
+                    Valuation Adjustment
+                  </span>
+                  <span style={{ fontWeight: 800, fontSize: 14,
+                    color: cv_assessment.valuation_adjustment_factor > 1 ? '#0F6E56'
+                         : cv_assessment.valuation_adjustment_factor < 1 ? '#A32D2D' : '#534AB7' }}>
+                    {cv_assessment.valuation_adjustment_factor > 1 ? '+' : ''}
+                    {((cv_assessment.valuation_adjustment_factor - 1) * 100).toFixed(1)}%
+                  </span>
+                </div>
               </div>
             </div>
           )}
+
         </div>
       )}
 
