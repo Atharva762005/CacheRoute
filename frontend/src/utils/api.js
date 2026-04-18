@@ -6,7 +6,7 @@ const DEMO_KEY = 'propiq-demo-2026';
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000,
+  timeout: 300000, // Increased to 5 mins for Render Free Tier ML init
   headers: { 'Content-Type': 'application/json', 'X-API-Key': DEMO_KEY },
 });
 
@@ -41,7 +41,7 @@ export const assessWithImages = async (formData, images = []) => {
 
   const { data } = await axios.post(`${BASE_URL}/api/v1/assess/image`, fd, {
     headers: { 'Content-Type': 'multipart/form-data', 'X-API-Key': DEMO_KEY },
-    timeout: 60000,
+    timeout: 300000, // 5 mins allowed for CLIP image processing on free tier
   });
   return data;
 };
