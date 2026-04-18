@@ -8,7 +8,7 @@ Built for the **TenzorX 2026 — Poonawalla Fincorp National AI Hackathon**.
 
 ---
 
-## ⚡ 11 "Beyond the Brief" Killer Features
+## ⚡ OUR USP's : 
 
 We went entirely beyond a standard chatbot/estimation model. PropIQ is a comprehensive lending OS:
 
@@ -107,7 +107,3 @@ PropIQ is a fully documented, production-ready REST API. Visit `http://localhost
 
 ---
 
-## 🔬 Note to Hackathon Judges
-This repository contains a massive amount of functionality engineered within 48 hours. When reviewing, we highly recommend switching between **Single Mode** (to view the Agentic Chatbot and CV Image Grading) and **Batch Mode** (to test the robust CSV Portfolio evaluation). We also recommend clicking the **PDF Report** button to see the final underwriting output.
-
-*Developed with ❤️ for the future of digital collateral management.*
