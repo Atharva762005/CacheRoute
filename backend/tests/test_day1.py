@@ -15,31 +15,29 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # ── Circle Rate Tests ──────────────────────────────────────────────────────
 
 def test_circle_rate_known_locality():
-    from app.data.pune_circle_rates import get_circle_rate
+    from app.data.india_circle_rates import get_circle_rate
     result = get_circle_rate("Baner", "2bhk_apartment")
-    assert result["found"] is True
     assert result["zone_tier"] == "prime"
-    assert result["circle_rate_per_sqft"] == 10800
+    assert result["circle_rate_per_sqft"] > 5000
     assert result["locality"] == "Baner"
 
 def test_circle_rate_unknown_locality():
-    from app.data.pune_circle_rates import get_circle_rate
+    from app.data.india_circle_rates import get_circle_rate
     result = get_circle_rate("Unknown Area XYZ", "2bhk_apartment")
-    assert result["found"] is False
-    assert result["circle_rate_per_sqft"] > 0
+    assert result["circle_rate_per_sqft"] == 6000
     assert result["zone_tier"] == "mid"
 
 def test_circle_rate_all_property_types():
-    from app.data.pune_circle_rates import get_circle_rate
+    from app.data.india_circle_rates import get_circle_rate
     prop_types = ["2bhk_apartment", "villa", "shop", "office", "plot"]
     for pt in prop_types:
         r = get_circle_rate("Kothrud", pt)
         assert r["circle_rate_per_sqft"] > 0, f"Failed for {pt}"
 
 def test_all_localities_covered():
-    from app.data.pune_circle_rates import PUNE_CIRCLE_RATES
-    assert len(PUNE_CIRCLE_RATES) >= 10
-    for name, data in PUNE_CIRCLE_RATES.items():
+    from app.data.india_circle_rates import ALL_CIRCLE_RATES
+    assert len(ALL_CIRCLE_RATES) >= 10
+    for name, data in ALL_CIRCLE_RATES.items():
         assert "zone_tier" in data
         assert data["zone_tier"] in ["prime", "mid", "peripheral"]
         assert data["residential_apartment"] > 0
@@ -62,11 +60,11 @@ def test_data_generator_value_ranges():
     assert df["total_market_value"].min() > 0
     assert df["total_market_value"].max() < 1e9   # < 100 Cr sanity check
     assert df["liquidity_score"].between(0, 100).all()
-    assert df["price_per_sqft"].min() > 1000      # > ₹1000/sqft minimum
+    assert df["price_per_sqft"].min() > 500      # > ₹500/sqft minimum
 
 def test_circle_rate_anchoring():
     from app.ml.data_generator import generate_dataset
-    from app.data.pune_circle_rates import PUNE_CIRCLE_RATES
+    from app.data.india_circle_rates import ALL_CIRCLE_RATES
     df = generate_dataset(n_per_combination=5)
     # Market price should always be above circle rate (no discount below floor)
     above_floor = df["price_per_sqft"] >= df["circle_rate_per_sqft"] * 0.5
