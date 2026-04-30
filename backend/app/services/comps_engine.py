@@ -57,7 +57,9 @@ def init_db():
 
 def _populate_comps(conn):
     """Generate realistic comparable listings for all localities."""
-    from app.data.india_circle_rates import ALL_CIRCLE_RATES, ZONE_MULTIPLIERS
+    from app.data.india_circle_rates import ZONE_MULTIPLIERS
+    from app.core.db import SessionLocal
+    from app.models.db_models import CircleRate
 
     rng = random.Random(42)
     rows = []
@@ -78,16 +80,20 @@ def _populate_comps(conn):
         "Near metro station", "Main road facing",
     ]
 
-    for locality, data in ALL_CIRCLE_RATES.items():
-        zone = data["zone_tier"]
-        city = data["city"]
-        mult_range = ZONE_MULTIPLIERS[zone]
-
-        for prop_type, (min_sz, max_sz) in PROP_CONFIGS.items():
-            cr_key = "residential_apartment" if "apartment" in prop_type or prop_type == "villa" \
-                     else "commercial_shop" if prop_type == "shop" \
-                     else "commercial_office" if prop_type == "office" else "residential_apartment"
-            circle_rate = data[cr_key]
+    db = SessionLocal()
+    try:
+        circle_rates = db.query(CircleRate).all()
+        for rate in circle_rates:
+            zone = rate.zone_tier
+            city = rate.city
+            mult_range = ZONE_MULTIPLIERS.get(zone, ZONE_MULTIPLIERS["mid"])
+    
+            for prop_type, (min_sz, max_sz) in PROP_CONFIGS.items():
+                cr_key = "residential_apartment" if "apartment" in prop_type or prop_type == "villa" \
+                         else "commercial_shop" if prop_type == "shop" \
+                         else "commercial_office" if prop_type == "office" else "residential_apartment"
+                
+                circle_rate = getattr(rate, cr_key, rate.residential_apartment)
 
             # Generate 4-8 comps per locality+type
             for _ in range(rng.randint(4, 8)):
@@ -108,13 +114,15 @@ def _populate_comps(conn):
                     listing_date, 0.0, rng.choice(ADDRESS_HINTS),
                 ))
 
-    conn.executemany("""
-        INSERT INTO comps (locality, city, prop_type, size_sqft, age_years, floor_num,
-            price_per_sqft, total_price, zone_tier, source, listing_date, distance_km, address_hint)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, rows)
-    conn.commit()
-    print(f"Inserted {len(rows)} comparable records")
+        conn.executemany("""
+            INSERT INTO comps (locality, city, prop_type, size_sqft, age_years, floor_num,
+                price_per_sqft, total_price, zone_tier, source, listing_date, distance_km, address_hint)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, rows)
+        conn.commit()
+        print(f"Inserted {len(rows)} comparable records")
+    finally:
+        db.close()
 
 
 # ── Comp finder ────────────────────────────────────────────────────────────

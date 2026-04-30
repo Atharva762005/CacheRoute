@@ -63,6 +63,10 @@ export default function BatchUpload({ onViewProperty }) {
     reader.onload = (e) => {
       try {
         const parsed = parseCSV(e.target.result);
+        if (parsed.length > 500) {
+          setError('File too large. Maximum 500 properties allowed per batch to prevent memory overload.');
+          return;
+        }
         setProperties(parsed);
         setResults(null);
         setError(null);

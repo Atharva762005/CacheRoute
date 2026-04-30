@@ -3,7 +3,7 @@ PropIQ Pydantic Models
 All request and response schemas for the API.
 """
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 
 
 # ── Request Models ─────────────────────────────────────────────────────────
@@ -13,7 +13,10 @@ class PropertyInput(BaseModel):
         ..., example="Baner",
         description="Pune locality. Supported: Baner, Kothrud, Koregaon Park, Wakad, Hinjewadi, Hadapsar, Wagholi, Viman Nagar, Shivajinagar, Aundh, Pimpri, Chinchwad, Katraj, Talegaon, Chakan, Ambegaon"
     )
-    prop_type: str = Field(
+    prop_type: Literal[
+        "1bhk_apartment", "2bhk_apartment", "3bhk_apartment", "4bhk_apartment",
+        "villa", "shop", "office", "plot"
+    ] = Field(
         ..., example="2bhk_apartment",
         description="One of: 1bhk_apartment, 2bhk_apartment, 3bhk_apartment, 4bhk_apartment, villa, shop, office, plot"
     )
@@ -22,8 +25,13 @@ class PropertyInput(BaseModel):
     floor_num: int = Field(default=3, ge=0, le=50, example=3, description="Floor number (0 = ground)")
     is_freehold: int = Field(default=1, ge=0, le=1, example=1, description="1=Freehold, 0=Leasehold")
     is_rera_registered: int = Field(default=1, ge=0, le=1, example=1, description="1=RERA registered, 0=Not registered")
-    occupancy: str = Field(default="self_occupied", example="self_occupied", description="self_occupied | rented | vacant")
+    occupancy: Literal["self_occupied", "rented", "vacant"] = Field(
+        default="self_occupied", example="self_occupied", description="self_occupied | rented | vacant"
+    )
     rental_yield_pct: float = Field(default=0.0, ge=0, le=15, example=3.5, description="Annual rental yield % (if rented)")
+    # Gap 5 fix: Accept coordinates directly to skip geocoding
+    geo_lat: Optional[float] = Field(default=None, example=18.559, description="Latitude (optional — skips geocoding if provided)")
+    geo_lon: Optional[float] = Field(default=None, example=73.787, description="Longitude (optional — skips geocoding if provided)")
 
     class Config:
         json_schema_extra = {
@@ -36,7 +44,9 @@ class PropertyInput(BaseModel):
                 "is_freehold": 1,
                 "is_rera_registered": 1,
                 "occupancy": "self_occupied",
-                "rental_yield_pct": 0.0
+                "rental_yield_pct": 0.0,
+                "geo_lat": None,
+                "geo_lon": None,
             }
         }
 
@@ -58,6 +68,7 @@ class EnrichmentData(BaseModel):
     circle_rate_per_sqft: int
     infra_score: float
     listing_density: float
+    neighbourhood_quality_score: Optional[float]
     geo: Dict[str, Any]
 
 class CVAssessment(BaseModel):
@@ -82,8 +93,12 @@ class ValuationResponse(BaseModel):
     confidence_score: float
     price_per_sqft_estimate: int
     key_drivers: List[Dict[str, Any]]
+    # Gap 7 fix: flat string list matching problem statement sample format
+    key_drivers_summary: List[str]
     shap_values: Dict[str, float]
     risk_flags: List[Dict[str, Any]]
+    # Gap 8 fix: flat string list matching problem statement sample format
+    risk_flags_summary: List[str]
     enrichment: Dict[str, Any]
     cv_assessment: Optional[Dict[str, Any]]
     processing_time_ms: int
@@ -92,7 +107,7 @@ class ValuationResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "request_id": "a1b2c3d4",
+                "request_id": "A1B2C3D4",
                 "locality": "Baner",
                 "prop_type": "2bhk_apartment",
                 "size_sqft": 850,
@@ -108,7 +123,9 @@ class ValuationResponse(BaseModel):
                     {"feature": "infra_score", "impact_inr": 1800000, "direction": "positive"},
                     {"feature": "age_years", "impact_inr": -600000, "direction": "negative"},
                 ],
+                "key_drivers_summary": ["proximity_to_metro", "standard_2bhk_configuration", "mid_age_building"],
                 "risk_flags": [],
+                "risk_flags_summary": [],
                 "processing_time_ms": 312,
                 "model_mape_pct": 8.3
             }

@@ -48,7 +48,7 @@ const inputStyle = {
   outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box',
 };
 
-export default function PropertyMap({ locality, result, city, onLocationResolved }) {
+export default function PropertyMap({ locality, result, city, onLocationResolved, geo_lat, geo_lon }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markerRef = useRef(null);
@@ -61,24 +61,33 @@ export default function PropertyMap({ locality, result, city, onLocationResolved
   const [geocodeError, setGeocodeError] = useState('');
   const [resolvedCoords, setResolvedCoords] = useState(null);
 
-  // Derive coordinates to display
+  // Derive coordinates to display — priority: exact user-provided > resolvedCoords > locality lookup > city center
   const defaultCenter = CITY_CENTERS[city] || CITY_CENTERS.Pune;
-  let coords = resolvedCoords
-    ? [resolvedCoords.lat, resolvedCoords.lon]
-    : (locality && LOCALITY_COORDS[locality])
-      ? LOCALITY_COORDS[locality]
-      : (result?.enrichment?.geo?.lat
-          ? [result.enrichment.geo.lat, result.enrichment.geo.lon]
-          : defaultCenter);
+  let coords;
+  if (geo_lat != null && geo_lon != null) {
+    // Exact coordinates from user — highest priority, pin right here
+    coords = [geo_lat, geo_lon];
+  } else if (resolvedCoords) {
+    coords = [resolvedCoords.lat, resolvedCoords.lon];
+  } else if (locality && LOCALITY_COORDS[locality]) {
+    coords = LOCALITY_COORDS[locality];
+  } else if (result?.enrichment?.geo?.lat) {
+    coords = [result.enrichment.geo.lat, result.enrichment.geo.lon];
+  } else {
+    coords = defaultCenter;
+  }
 
-  // When locality (dropdown) changes, reset custom coords
+  // When locality or exact coords change, reset the map's own custom coords
   useEffect(() => {
-    setResolvedCoords(null);
+    // If parent provides exact coords, the map's own inputs are secondary
+    if (geo_lat != null && geo_lon != null) {
+      setResolvedCoords(null); // clear map-level override; parent coords take priority
+    }
     setAddressInput('');
     setLatInput('');
     setLngInput('');
     setGeocodeError('');
-  }, [locality, city]);
+  }, [locality, city, geo_lat, geo_lon]);
 
   // Init map
   useEffect(() => {

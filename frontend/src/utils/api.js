@@ -91,6 +91,17 @@ export const getAuditLog = async () => {
   return data;
 };
 
+// ── Async Batch (Celery) ───────────────────────────────────────────────────
+export const submitBatchAsync = async (properties) => {
+  const { data } = await api.post('/api/v1/assess/batch/async', properties);
+  return data;
+};
+
+export const pollBatchStatus = async (jobId) => {
+  const { data } = await api.get(`/api/v1/batch/status/${jobId}`);
+  return data;
+};
+
 export const healthCheck = async () => {
   const { data } = await api.get('/api/v1/health');
   return data;

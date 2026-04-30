@@ -86,34 +86,56 @@ PROPERTY_TYPE_MAP = {
 
 
 def get_circle_rate(locality: str, property_type: str) -> dict:
+    from app.core.db import SessionLocal
+    from app.models.db_models import CircleRate
+    
     normalized = locality.strip().title()
     prop_key = PROPERTY_TYPE_MAP.get(property_type.lower(), "residential_apartment")
-    for loc_name, data in ALL_CIRCLE_RATES.items():
-        if loc_name.lower() in normalized.lower() or normalized.lower() in loc_name.lower():
+    
+    db = SessionLocal()
+    try:
+        # Perform an ILIKE query for substring match, just like the old logic
+        rate = db.query(CircleRate).filter(CircleRate.locality.ilike(f"%{normalized}%")).first()
+        
+        if rate:
+            # Dynamically get the appropriate property rate column
+            rate_val = getattr(rate, prop_key, rate.residential_apartment)
             return {
-                "locality": loc_name,
-                "city": data["city"],
-                "zone_tier": data["zone_tier"],
-                "circle_rate_per_sqft": data[prop_key],
+                "locality": rate.locality,
+                "city": rate.city,
+                "zone_tier": rate.zone_tier,
+                "circle_rate_per_sqft": rate_val,
                 "property_type_key": prop_key,
-                "lat": data.get("lat"),
-                "lon": data.get("lon"),
-                "found": True,
+                "lat": rate.lat,
+                "lon": rate.lon,
             }
-    # Default to Pune mid-zone
-    return {
-        "locality": normalized, "city": "Pune", "zone_tier": "mid",
-        "circle_rate_per_sqft": 7500, "property_type_key": prop_key,
-        "lat": 18.5204, "lon": 73.8567, "found": False,
-    }
+        else:
+            # Fallback if locality completely unknown
+            return {
+                "locality": locality,
+                "city": "Pune",
+                "zone_tier": "mid",
+                "circle_rate_per_sqft": 6000,
+                "property_type_key": prop_key,
+                "lat": None,
+                "lon": None,
+            }
+    finally:
+        db.close()
 
 
 def get_localities_by_city() -> dict:
-    result = {}
-    for city, locs in CITY_LOCALITIES.items():
-        result[city] = [
-            {"locality": loc, "zone_tier": ALL_CIRCLE_RATES[loc]["zone_tier"],
-             "circle_rate": ALL_CIRCLE_RATES[loc]["residential_apartment"]}
-            for loc in locs
-        ]
-    return result
+    from app.core.db import SessionLocal
+    from app.models.db_models import CircleRate
+    
+    db = SessionLocal()
+    try:
+        rates = db.query(CircleRate.city, CircleRate.locality).all()
+        result = {}
+        for city, locality in rates:
+            if city not in result:
+                result[city] = []
+            result[city].append(locality)
+        return result
+    finally:
+        db.close()

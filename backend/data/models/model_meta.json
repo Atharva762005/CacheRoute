@@ -1,5 +1,5 @@
 {
-  "mape_validation_pct": 8.39,
+  "mape_validation_pct": 7.81,
   "feature_cols": [
     "size_sqft",
     "age_years",
@@ -14,6 +14,7 @@
     "location_multiplier",
     "age_depreciation_factor",
     "zone_tier_encoded",
+    "neighbourhood_quality_score",
     "prop_type_encoded"
   ],
   "prop_type_encoding": {

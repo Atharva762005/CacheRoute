@@ -93,6 +93,12 @@ def generate_record(locality: str, zone_data: dict, prop_type: str) -> dict:
     elif zone_tier == "peripheral":
         infra_score = max(0, infra_score - 20)
 
+    # Gap 9: Neighbourhood quality score (planned vs unplanned zone quality)
+    nq_base = {"prime": 78.0, "mid": 58.0, "peripheral": 40.0}[zone_tier]
+    # Infra score is a moderate signal of NQ, with independent noise
+    nq_score = nq_base + (infra_score - 50) * 0.20 + np.random.normal(0, 6)
+    neighbourhood_quality_score = round(min(100, max(10, nq_score)), 1)
+
     # Legal and occupancy
     is_freehold = np.random.choice([1, 0], p=[0.82, 0.18])
     is_rera_registered = np.random.choice([1, 0], p=[0.75, 0.25])
@@ -177,6 +183,7 @@ def generate_record(locality: str, zone_data: dict, prop_type: str) -> dict:
         "location_multiplier": round(location_mult, 3),
         "age_depreciation_factor": round(depreciation, 3),
         "zone_tier_encoded": {"prime": 2, "mid": 1, "peripheral": 0}[zone_tier],
+        "neighbourhood_quality_score": neighbourhood_quality_score,  # Gap 9
         # Targets
         "price_per_sqft": round(price_per_sqft, 1),
         "total_market_value": round(total_market_value, 0),

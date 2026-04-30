@@ -323,6 +323,50 @@ export default function ResultsDashboard({ result, onDownloadPDF, loadingPDF }) 
                     {((cv_assessment.valuation_adjustment_factor - 1) * 100).toFixed(1)}%
                   </span>
                 </div>
+
+                {/* VLM Analysis Description (when Groq VLM is used) */}
+                {cv_assessment.vlm_summary && (
+                  <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.85)',
+                    borderRadius: 8, padding: '10px 12px', border: '1px solid rgba(83,74,183,0.15)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#534AB7' }}>
+                        🤖 VLM Analysis
+                      </span>
+                      <span style={{ fontSize: 9, background: '#534AB7', color: '#fff',
+                        padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>
+                        {cv_assessment.engine === 'groq_vlm' ? 'Llama 4 Scout' : 'Fallback'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#2C2C2A', lineHeight: 1.5 }}>
+                      {cv_assessment.vlm_summary}
+                    </div>
+                  </div>
+                )}
+
+                {/* Per-image VLM details */}
+                {cv_assessment.per_image_results?.some(r => r.vlm_analysis?.observations?.length > 0) && (
+                  <div style={{ marginTop: 8 }}>
+                    {cv_assessment.per_image_results.filter(r => r.vlm_analysis).map((r, i) => (
+                      <div key={i} style={{ background: 'rgba(255,255,255,0.7)', borderRadius: 6,
+                        padding: '6px 10px', marginBottom: 4, fontSize: 11 }}>
+                        <div style={{ fontWeight: 700, color: '#534AB7', marginBottom: 3, textTransform: 'capitalize' }}>
+                          {r.tag} Image {i + 1}
+                        </div>
+                        {r.vlm_analysis?.observations?.length > 0 && (
+                          <div style={{ color: '#0F6E56', marginBottom: 2 }}>
+                            ✓ {r.vlm_analysis.observations.join(' · ')}
+                          </div>
+                        )}
+                        {r.vlm_analysis?.defects?.length > 0 && (
+                          <div style={{ color: '#A32D2D' }}>
+                            ⚠ {r.vlm_analysis.defects.join(' · ')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
               </div>
             </div>
           )}

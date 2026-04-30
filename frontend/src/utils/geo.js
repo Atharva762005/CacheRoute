@@ -69,3 +69,25 @@ export async function geocodeAddress(address) {
     display: data[0].display_name,
   };
 }
+/**
+ * Reverse geocode lat/lon to a human-readable address via Nominatim.
+ * Returns the display_name string or a fallback coordinate string.
+ */
+export async function reverseGeocode(lat, lon) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=17&addressdetails=1`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    const data = await res.json();
+    if (data && data.display_name) {
+      // Return a concise address: road + suburb + city
+      const a = data.address || {};
+      const parts = [
+        a.road || a.pedestrian || a.footway,
+        a.suburb || a.neighbourhood || a.quarter,
+        a.city || a.town || a.county,
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(', ') : data.display_name.split(',').slice(0, 3).join(',');
+    }
+  } catch (_) {}
+  return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}

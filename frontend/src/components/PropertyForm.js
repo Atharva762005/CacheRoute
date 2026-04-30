@@ -1,7 +1,7 @@
 // PropIQ PropertyForm — location via Address / Lat-Long tabs (replaces locality dropdown)
 import React, { useState, useCallback } from 'react';
 import { PROP_TYPES } from '../utils/api';
-import { geocodeAddress, findNearestLocality } from '../utils/geo';
+import { geocodeAddress, findNearestLocality, reverseGeocode } from '../utils/geo';
 
 const s = {
   label: {
@@ -52,12 +52,17 @@ export default function PropertyForm({ form, onChange, onSubmit, loading }) {
   const [lngInput, setLngInput] = useState('');
   const [resolving, setResolving] = useState(false);
   const [locError, setLocError] = useState('');
-  const [resolvedInfo, setResolvedInfo] = useState(null); // { locality, distKm, display }
+  const [resolvedInfo, setResolvedInfo] = useState(null); // resolvedInfo: { locality, distKm, display, isExact, exactAddress }
 
   const applyLocation = useCallback(
-    (lat, lon, display = '') => {
+    async (lat, lon, display = '', isExact = false) => {
       const { locality, distanceKm } = findNearestLocality(lat, lon);
-      setResolvedInfo({ locality, distKm: distanceKm.toFixed(1), display });
+      let exactAddress = display;
+      if (isExact) {
+        // Reverse geocode to get the real street address for the green box
+        exactAddress = await reverseGeocode(lat, lon);
+      }
+      setResolvedInfo({ locality, distKm: distanceKm.toFixed(1), display, isExact, exactAddress });
       onChange({ ...form, locality, geo_lat: lat, geo_lon: lon });
     },
     [form, onChange]
@@ -87,7 +92,8 @@ export default function PropertyForm({ form, onChange, onSubmit, loading }) {
       return;
     }
     setLocError('');
-    applyLocation(lat, lon, `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+    // isExact=true triggers reverse geocoding in applyLocation
+    applyLocation(lat, lon, `${lat.toFixed(5)}, ${lon.toFixed(5)}`, true);
   }, [latInput, lngInput, applyLocation]);
 
   const clearLocation = () => {
@@ -181,15 +187,26 @@ export default function PropertyForm({ form, onChange, onSubmit, loading }) {
             justifyContent: 'space-between', gap: 8 }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#0F6E56' }}>
-                ✓ {resolvedInfo.locality}
+                ✓ {resolvedInfo.isExact
+                  ? resolvedInfo.exactAddress || resolvedInfo.display
+                  : resolvedInfo.locality}
               </div>
               <div style={{ fontSize: 10, color: '#3a8a6e', marginTop: 2, lineHeight: 1.4 }}>
-                Nearest locality · {resolvedInfo.distKm} km away
+                {resolvedInfo.isExact
+                  ? `Exact coordinates · ${resolvedInfo.display}`
+                  : `Nearest locality · ${resolvedInfo.distKm} km away`}
               </div>
-              {resolvedInfo.display && resolvedInfo.display !== resolvedInfo.locality && (
+              {/* For address mode, show the full geocoded address below */}
+              {!resolvedInfo.isExact && resolvedInfo.display && resolvedInfo.display !== resolvedInfo.locality && (
                 <div style={{ fontSize: 9, color: '#888780', marginTop: 2,
                   maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {resolvedInfo.display}
+                </div>
+              )}
+              {/* For lat-long mode, show which locality will be used for assessment */}
+              {resolvedInfo.isExact && (
+                <div style={{ fontSize: 9, color: '#888780', marginTop: 2 }}>
+                  Assessment zone: {resolvedInfo.locality}
                 </div>
               )}
             </div>

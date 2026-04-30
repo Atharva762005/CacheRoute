@@ -1,0 +1,65 @@
+{
+  "columns": [
+    "Property_ID",
+    "District_or_City",
+    "Region_Tier",
+    "Locality",
+    "Property_Type",
+    "Area_SqFt",
+    "Price_Per_SqFt_INR",
+    "Total_Price_INR"
+  ],
+  "shape": "(5, 8)",
+  "head": [
+    {
+      "Property_ID": "MH-4982523",
+      "District_or_City": "Thane",
+      "Region_Tier": "Tier 1",
+      "Locality": "Mahatma Gandhi Peth",
+      "Property_Type": "Apartment",
+      "Area_SqFt": 824,
+      "Price_Per_SqFt_INR": 50754.89,
+      "Total_Price_INR": 41822029.36
+    },
+    {
+      "Property_ID": "MH-5148974",
+      "District_or_City": "Pune",
+      "Region_Tier": "Tier 1",
+      "Locality": "Vasantrao Naik Park",
+      "Property_Type": "Commercial",
+      "Area_SqFt": 3670,
+      "Price_Per_SqFt_INR": 39584.69,
+      "Total_Price_INR": 145275812.3
+    },
+    {
+      "Property_ID": "MH-2383291",
+      "District_or_City": "Jalna",
+      "Region_Tier": "Tier 3",
+      "Locality": "Lokmanya Tilak Vihar",
+      "Property_Type": "Land",
+      "Area_SqFt": 19656,
+      "Price_Per_SqFt_INR": 1943.85,
+      "Total_Price_INR": 38208315.6
+    },
+    {
+      "Property_ID": "MH-4353219",
+      "District_or_City": "Mira-Bhayandar",
+      "Region_Tier": "Tier 2",
+      "Locality": "Ganesh Peth",
+      "Property_Type": "Apartment",
+      "Area_SqFt": 2478,
+      "Price_Per_SqFt_INR": NaN,
+      "Total_Price_INR": 23139712.68
+    },
+    {
+      "Property_ID": "MH-6036093",
+      "District_or_City": "Pune",
+      "Region_Tier": "Tier 1",
+      "Locality": "Shivaji Chowk",
+      "Property_Type": "Penthouse",
+      "Area_SqFt": 2019,
+      "Price_Per_SqFt_INR": 20112.39,
+      "Total_Price_INR": 40606915.41
+    }
+  ]
+}

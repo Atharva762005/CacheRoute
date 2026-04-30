@@ -10,6 +10,7 @@ beautifulsoup4==4.12.3
 pandas==2.3.3
 numpy==1.26.4
 scikit-learn==1.4.2
+tenacity==8.2.3
 xgboost==2.0.3
 shap==0.45.0
 pillow==10.3.0
@@ -23,3 +24,9 @@ python-dotenv==1.0.1
 pytest==8.2.0
 pytest-asyncio==0.23.6
 groq
+
+# Phase 1: Database Modernization & Asynchronous Processing
+sqlalchemy==2.0.29
+psycopg2-binary==2.9.9
+celery==5.4.0
+redis==5.0.4

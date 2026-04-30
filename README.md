@@ -32,13 +32,14 @@ We went entirely beyond a standard chatbot/estimation model. PropIQ is a compreh
 graph TD
     A[Frontend React UI] -->|Agentic Chat Form & Images| B(FastAPI Backend)
     B --> C{PropIQ Core Engine}
+    B --> P[(PostgreSQL + SQLAlchemy)]
     
     C --> D[XGBoost Valuation Model]
-    C --> E[CLIP CV Image Analyzer]
+    C --> E[Groq VLM CV Analyzer]
     C --> F[Isolation Forest Anomaly Det.]
     C --> G[Groq LLM Parser]
     
-    D --> H[(Pune Circle Rates DB)]
+    D --> H[(Circle Rates DB)]
     D --> I[(OSM Geo-Enrichment)]
     
     C --> J[Comps & 24Mo Trends Engine]
@@ -47,6 +48,9 @@ graph TD
     
     K --> L[Llama 3.3 Credit Memo Generator]
     K --> M[ReportLab PDF Engine]
+    
+    B -->|Async Batch| Q[Celery Workers]
+    Q --> R[(Redis Broker)]
     
     L --> N((JSON REST Output))
     M --> O((PDF Output))

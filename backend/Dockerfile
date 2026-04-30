@@ -2,19 +2,19 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# System deps
-RUN apt-get update && apt-get install -y \
-    gcc g++ curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-# Python deps first (cached layer)
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source
+# Copy application code
 COPY . .
 
-# Generate data + train model at build time
+# Generate synthetic data and train model
 RUN python -m app.ml.data_generator && \
     python -m app.ml.valuation_model
 

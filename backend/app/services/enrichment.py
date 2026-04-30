@@ -1,7 +1,8 @@
 """
 PropIQ Enrichment Services
-- GeoEnricher: geocoding via Nominatim
+- GeoEnricher: geocoding via Nominatim (skipped if lat/lon provided directly)
 - InfraScorer: infrastructure proximity via OSM Overpass API
+- NeighbourhoodQualityScorer: planned vs unplanned zone quality signal
 - MarketSignalService: listing density proxy
 - All services are async and fire in parallel
 """
@@ -29,6 +30,16 @@ INFRA_QUERIES = {
     "bus_stop":      ('node["highway"="bus_stop"]', 500, 4),
 }
 
+# Gap 1: OSM queries for neighbourhood quality scoring
+NEIGHBOURHOOD_QUERIES = {
+    "residential_land":  ('way["landuse"="residential"]', 1000, 20),
+    "commercial_land":   ('way["landuse"="commercial"]', 1000, -10),
+    "industrial_land":   ('way["landuse"="industrial"]', 2000, -20),
+    "park":              ('way["leisure"="park"]', 1500, 10),
+    "religious":         ('node["amenity"="place_of_worship"]', 500, 3),
+    "slum":              ('way["landuse"="slum"]', 1000, -25),
+}
+
 PUNE_COORDS = {
     "Koregaon Park":  (18.5362, 73.8938),
     "Baner":          (18.5590, 73.7868),
@@ -46,6 +57,38 @@ PUNE_COORDS = {
     "Chinchwad":      (18.6436, 73.7983),
     "Katraj":         (18.4601, 73.8669),
     "Ambegaon":       (18.4489, 73.8526),
+    # Mumbai
+    "Bandra West":    (19.0596, 72.8295),
+    "Worli":          (19.0178, 72.8148),
+    "Powai":          (19.1197, 72.9052),
+    "Andheri West":   (19.1365, 72.8304),
+    "Andheri East":   (19.1197, 72.8697),
+    "Thane":          (19.2183, 72.9781),
+    "Navi Mumbai":    (19.0330, 73.0297),
+    "Dadar":          (19.0178, 72.8452),
+    "Borivali":       (19.2323, 72.8563),
+    "Mira Road":      (19.2876, 72.8689),
+    "Virar":          (19.4588, 72.7987),
+    "Kharghar":       (19.0478, 73.0760),
+    # Bangalore
+    "Koramangala":    (12.9352, 77.6245),
+    "Indiranagar":    (12.9716, 77.6412),
+    "Whitefield":     (12.9698, 77.7499),
+    "HSR Layout":     (12.9116, 77.6474),
+    "Electronic City":(12.8450, 77.6601),
+    "Marathahalli":   (12.9591, 77.6974),
+    "Sarjapur Road":  (12.9102, 77.6789),
+    "Yelahanka":      (13.1006, 77.5963),
+    "Bannerghatta":   (12.8636, 77.5994),
+    "Devanahalli":    (13.2467, 77.7108),
+    "Tumkur Road":    (13.0230, 77.5540),
+}
+
+# Gap 1: Baseline neighbourhood quality scores per zone tier (deterministic fallback)
+ZONE_NEIGHBOURHOOD_BASE = {
+    "prime":      78.0,
+    "mid":        58.0,
+    "peripheral": 40.0,
 }
 
 LISTING_DENSITY_ESTIMATES = {
@@ -62,12 +105,12 @@ async def geocode_address(address: str, session: aiohttp.ClientSession) -> dict:
         if locality.lower() in address.lower():
             return {
                 "lat": coords[0], "lon": coords[1],
-                "display_name": f"{locality}, Pune, Maharashtra",
+                "display_name": f"{locality}, Maharashtra",
                 "locality": locality, "source": "lookup",
             }
     # Nominatim fallback
     try:
-        params = {"q": f"{address}, Pune, Maharashtra, India", "format": "json", "limit": 1}
+        params = {"q": f"{address}, Maharashtra, India", "format": "json", "limit": 1}
         headers = {"User-Agent": "PropIQ/1.0 (hackathon project)"}
         async with session.get(NOMINATIM_URL, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as r:
             data = await r.json()
@@ -83,8 +126,8 @@ async def geocode_address(address: str, session: aiohttp.ClientSession) -> dict:
     return {"lat": 18.5204, "lon": 73.8567, "display_name": address, "locality": address, "source": "default"}
 
 
-async def compute_infra_score(lat: float, lon: float, session: aiohttp.ClientSession) -> dict:
-    """Score infrastructure proximity using OSM Overpass API."""
+async def compute_infra_score(lat: float, lon: float, session: aiohttp.ClientSession, zone_tier: str = "mid") -> dict:
+    """Score infrastructure proximity using OSM Overpass API. Uses zone-based fallback on failure."""
     scores = {}
     total_score = 0.0
     total_weight = 0.0
@@ -115,14 +158,56 @@ async def compute_infra_score(lat: float, lon: float, session: aiohttp.ClientSes
         total_score += feature_score * weight
         total_weight += weight
 
-    infra_score = (total_score / total_weight) if total_weight > 0 else 50.0
-    infra_score = min(100, max(0, infra_score))
+    if total_weight > 0:
+        infra_score = (total_score / total_weight)
+    else:
+        # Fallback if API fails to prevent massive distress discounts (Error #1)
+        infra_score = {"prime": 75.0, "mid": 55.0, "peripheral": 35.0}.get(zone_tier, 55.0)
+        
+    infra_score = min(100.0, max(0.0, infra_score))
 
     return {
         "infra_score": round(infra_score, 1),
         "breakdown": scores,
         "data_source": "openstreetmap_overpass",
     }
+
+
+# Gap 1: Neighbourhood quality score
+async def compute_neighbourhood_quality(
+    lat: float, lon: float, zone_tier: str, session: aiohttp.ClientSession
+) -> float:
+    """
+    Score neighbourhood quality: planned vs unplanned zones, land-use mix.
+    Returns 0-100 score. Higher = more premium/planned residential neighbourhood.
+    Falls back to zone_tier baseline if OSM unavailable.
+    """
+    base_score = ZONE_NEIGHBOURHOOD_BASE.get(zone_tier, 58.0)
+    adjustment = 0.0
+
+    async def query_nq(feature_name: str, query_part: str, radius: int, weight: int):
+        overpass_q = f"[out:json][timeout:6];{query_part}(around:{radius},{lat},{lon});out count;"
+        try:
+            async with session.post(
+                OVERPASS_URL, data={"data": overpass_q},
+                timeout=aiohttp.ClientTimeout(total=6)
+            ) as r:
+                data = await r.json()
+                count = data.get("elements", [{}])[0].get("tags", {}).get("total", 0)
+                count = int(count) if count else 0
+                return weight if count > 0 else 0
+        except Exception:
+            return 0
+
+    tasks = [query_nq(name, qp, radius, weight) for name, (qp, radius, weight) in NEIGHBOURHOOD_QUERIES.items()]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for r in results:
+        if isinstance(r, (int, float)):
+            adjustment += r
+
+    final = min(100.0, max(10.0, base_score + adjustment))
+    return round(final, 1)
 
 
 def estimate_listing_density(zone_tier: str, locality: str) -> dict:
@@ -142,17 +227,34 @@ def estimate_listing_density(zone_tier: str, locality: str) -> dict:
     }
 
 
-async def enrich_property(address: str, zone_tier: str = "mid") -> dict:
+async def enrich_property(
+    address: str,
+    zone_tier: str = "mid",
+    geo_lat: Optional[float] = None,
+    geo_lon: Optional[float] = None,
+) -> dict:
     """
     Main enrichment function — fires all services in parallel.
+    Gap 6 fix: If geo_lat/geo_lon are provided, skip geocoding entirely.
     Returns a consolidated enrichment dict ready for the ML model.
     """
     async with aiohttp.ClientSession() as session:
-        geo_task = geocode_address(address, session)
-        geo_result = await geo_task
+        # Gap 6 fix: bypass geocoding if coordinates are already known
+        if geo_lat is not None and geo_lon is not None:
+            geo_result = {
+                "lat": geo_lat, "lon": geo_lon,
+                "display_name": address,
+                "locality": address, "source": "user_provided",
+            }
+        else:
+            geo_result = await geocode_address(address, session)
+
         lat, lon = geo_result["lat"], geo_result["lon"]
-        infra_task = compute_infra_score(lat, lon, session)
-        infra_result = await infra_task
+
+        # Fire infra score and neighbourhood quality in parallel
+        infra_task = compute_infra_score(lat, lon, session, zone_tier)
+        nq_task = compute_neighbourhood_quality(lat, lon, zone_tier, session)
+        infra_result, nq_score = await asyncio.gather(infra_task, nq_task)
 
     listing_result = estimate_listing_density(zone_tier, geo_result.get("locality", address))
 
@@ -162,6 +264,7 @@ async def enrich_property(address: str, zone_tier: str = "mid") -> dict:
         "market": listing_result,
         "infra_score": infra_result["infra_score"],
         "listing_density": listing_result["listing_density"],
+        "neighbourhood_quality_score": nq_score,  # Gap 1
     }
 
 

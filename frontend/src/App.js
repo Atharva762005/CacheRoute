@@ -411,6 +411,8 @@ export default function App() {
                 result={result}
                 city={selectedCity}
                 onLocationResolved={setResolvedLocation}
+                geo_lat={form.geo_lat}
+                geo_lon={form.geo_lon}
               />
 
               {/* Multi-image upload */}
