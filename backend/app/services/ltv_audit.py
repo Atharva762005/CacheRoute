@@ -33,6 +33,7 @@ def calculate_ltv(
     prop_type_key: str,
     zone_tier: str,
     risk_flags: list,
+    resale_potential_index: float = 50.0,
 ) -> Dict:
     """
     Compute LTV recommendation with RBI compliance rationale.
@@ -71,6 +72,16 @@ def calculate_ltv(
         flag_note = f"{len(risk_flags)} risk flag(s) — 5% LTV haircut applied"
     else:
         flag_note = "No risk flags — standard LTV"
+
+    # Dynamic LTV Pricing based on Liquidity (RPI)
+    if resale_potential_index >= 75:
+        # Highly Liquid: +10% LTV boost (capped at 85% internal max)
+        pfl_ltv = min(pfl_ltv + 0.10, 0.85)
+        flag_note += f" | Dynamic LTV: +10% boost for Highly Liquid property (RPI {resale_potential_index:.1f})"
+    elif resale_potential_index < 50:
+        # Illiquid: -10% LTV penalty
+        pfl_ltv = max(pfl_ltv - 0.10, 0.40)
+        flag_note += f" | Dynamic LTV: -10% penalty for Illiquid property (RPI {resale_potential_index:.1f})"
 
     # Use distress value as security (conservative approach)
     distress_mid = int((distress_value_range[0] + distress_value_range[1]) / 2)

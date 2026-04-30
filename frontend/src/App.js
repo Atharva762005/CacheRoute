@@ -295,7 +295,7 @@ export default function App() {
           {/* Mode toggle */}
           <div style={{ display: 'flex', gap: 4, marginLeft: 4, background: '#F1EFE8',
             borderRadius: 8, padding: 3 }}>
-            {[{ k: 'single', l: 'Single' }, { k: 'batch', l: 'Batch' }].map((m) => (
+            {[{ k: 'single', l: 'Single' }, { k: 'batch', l: 'Portfolio' }].map((m) => (
               <button key={m.k} onClick={() => setMode(m.k)}
                 style={{ padding: '4px 12px', border: 'none', borderRadius: 6,
                   background: mode === m.k ? '#fff' : 'transparent',
@@ -352,10 +352,10 @@ export default function App() {
                     📊
                   </div>
                   <div style={{ fontSize: 22, fontWeight: 700, color: '#2C2C2A', marginBottom: 10 }}>
-                    Batch Property Viewer
+                    Live Portfolio Re-valuation (Mark-to-Market)
                   </div>
                   <div style={{ fontSize: 13, color: '#888780', maxWidth: 400, lineHeight: 1.8 }}>
-                    Run a batch assessment on the left, then click on any successfully assessed property in the list to view its complete dashboard and generate a PDF report.
+                    Run a portfolio re-valuation on the left to detect crashing property values and manage risk proactively. Click on any successfully assessed property in the list to view its complete dashboard and generate a PDF report.
                   </div>
                 </div>
               )}

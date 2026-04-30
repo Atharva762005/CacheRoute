@@ -220,9 +220,15 @@ async def assess_with_image(
                 if k in result:
                     result[k] = round(result[k] * adj)
 
-        # Add CV risk flag if condition is poor/fair
+        # Add CV risk flag if condition is poor/fair or if fraud detected
         condition = cv_result.get("condition", "good")
-        if condition == "poor":
+        if cv_result.get("is_fraud_detected"):
+            result.setdefault("risk_flags", []).append({
+                "flag": "cv_fraud_detected",
+                "severity": "high",
+                "detail": f"VLM Fraud Alert: {cv_result.get('fraud_reason', 'Digital manipulation or mismatch detected.')}"
+            })
+        elif condition == "poor":
             result.setdefault("risk_flags", []).append({
                 "flag": "cv_poor_condition",
                 "severity": "high",
@@ -252,7 +258,8 @@ async def assess_with_image(
         result["trend_summary"] = get_trend_summary(trend_data)
         result["ltv_analysis"] = calculate_ltv(
             result["market_value_mid"], result["distress_value_range"],
-            cr_data["property_type_key"], cr_data["zone_tier"], result.get("risk_flags", []))
+            cr_data["property_type_key"], cr_data["zone_tier"], result.get("risk_flags", []),
+            result.get("resale_potential_index", 50.0))
         result["credit_memo"] = memo
         result["processing_time_ms"] = int((time.time() - t0) * 1000)
 
@@ -298,6 +305,7 @@ async def assess_and_ltv(prop: PropertyInput, auth=Depends(get_api_key)):
             prop_type_key=cr_data["property_type_key"],
             zone_tier=cr_data["zone_tier"],
             risk_flags=result.get("risk_flags", []),
+            resale_potential_index=result.get("resale_potential_index", 50.0),
         )
         result["ltv_analysis"] = ltv
         log_assessment(result, "/assess/ltv")
@@ -328,7 +336,8 @@ async def assess_full(prop: PropertyInput, auth=Depends(get_api_key)):
         result["trend_summary"] = get_trend_summary(trend_data)
         result["ltv_analysis"] = calculate_ltv(
             result["market_value_mid"], result["distress_value_range"],
-            cr_data["property_type_key"], cr_data["zone_tier"], result.get("risk_flags", []))
+            cr_data["property_type_key"], cr_data["zone_tier"], result.get("risk_flags", []),
+            result.get("resale_potential_index", 50.0))
         result["credit_memo"] = memo
         result["processing_time_ms"] = int((time.time() - t0) * 1000)
         log_assessment(result, "/assess/full")
@@ -365,7 +374,8 @@ async def assess_batch(properties: List[PropertyInput], auth=Depends(get_api_key
             result["trend_summary"] = get_trend_summary(trend_data)
             result["ltv_analysis"] = calculate_ltv(
                 result["market_value_mid"], result["distress_value_range"],
-                cr_data["property_type_key"], cr_data["zone_tier"], result.get("risk_flags", []))
+                cr_data["property_type_key"], cr_data["zone_tier"], result.get("risk_flags", []),
+                result.get("resale_potential_index", 50.0))
             result["credit_memo"] = memo
             result["processing_time_ms"] = int((time.time() - t0) * 1000)
             result["status"] = "success"

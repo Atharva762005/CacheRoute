@@ -39,6 +39,7 @@ RULES:
 2. Provide a brief (2-3 sentence) description of what you observe
 3. List specific defects or positive features you can see
 4. Estimate a quality score from 0-100
+5. FRAUD DETECTION: Carefully examine the image for digital manipulation, photoshop artifacts, blurring, unnatural watermarks, or stock photo indicators. If detected, flag as fraud.
 
 RESPOND ONLY with valid JSON in this exact format:
 {
@@ -46,7 +47,9 @@ RESPOND ONLY with valid JSON in this exact format:
   "quality_score": 72,
   "description": "The building exterior shows a well-maintained facade with fresh paint...",
   "observations": ["Clean walls", "No visible cracks", "Modern windows"],
-  "defects": ["Minor weathering on balcony railing"]
+  "defects": ["Minor weathering on balcony railing"],
+  "is_fraud_detected": false,
+  "fraud_reason": ""
 }"""
 
 
@@ -177,6 +180,8 @@ class PropertyCVAnalyzer:
                 "cv_confidence": 0.92,
                 "image_analyzed": True,
                 "tag": tag,
+                "is_fraud_detected": vlm_result.get("is_fraud_detected", False),
+                "fraud_reason": vlm_result.get("fraud_reason", ""),
                 "vlm_analysis": {
                     "description": vlm_result.get("description", ""),
                     "observations": vlm_result.get("observations", []),
@@ -279,6 +284,8 @@ class PropertyCVAnalyzer:
             "interior_count": len(interior_results),
             "exterior_condition": exterior_results[0]["condition"] if exterior_results else None,
             "interior_condition": interior_results[0]["condition"] if interior_results else None,
+            "is_fraud_detected": any(r.get("is_fraud_detected", False) for r in per_image),
+            "fraud_reason": " | ".join(r.get("fraud_reason", "") for r in per_image if r.get("is_fraud_detected")),
             "per_image_results": per_image,
             "composite_raw_score": round(composite_raw, 2),
             "weighting": f"Exterior {int(EXTERIOR_WEIGHT*100)}% · Interior {int(INTERIOR_WEIGHT*100)}%",

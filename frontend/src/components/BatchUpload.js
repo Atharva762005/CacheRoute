@@ -186,7 +186,7 @@ export default function BatchUpload({ onViewProperty }) {
                 color: '#fff', border: 'none', borderRadius: 8, fontSize: 13,
                 fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
                 fontFamily: 'Inter, sans-serif' }}>
-              {loading ? 'Running...' : '⚡ Run Batch'}
+              {loading ? 'Running...' : '⚡ Run Portfolio Re-valuation'}
             </button>
             <button onClick={() => { setProperties([]); setResults(null); }}
               style={{ padding: '10px 14px', background: '#F1EFE8',
